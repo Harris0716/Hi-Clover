@@ -9,7 +9,7 @@ import torch.nn as nn
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset,GroupedHiCDataset
 import HiSiNet.models as models
 import torch
-from torch_plus.loss import ContrastiveLoss
+from torch_plus.loss import ContrastiveLoss, TripletLoss
 import argparse
 from HiSiNet.reference_dictionaries import reference_genomes
 import json
@@ -100,7 +100,8 @@ nn_model = nn_model.to(device)
 torch.save(nn_model.state_dict(), model_save_path + "_nn.ckpt")
 
 # Initialize loss functions and optimizer
-criterion = ContrastiveLoss()
+# criterion = ContrastiveLoss()
+criterion = TripletLoss()
 criterion2 = nn.CrossEntropyLoss()
 optimizer = optim.Adagrad(model.parameters())
 

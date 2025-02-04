@@ -14,6 +14,7 @@ class LastLayerNN(nn.Module):
             )
     def forward(self, x1, x2):
         return self.net(x1-x2)
+
 class TripletNet(nn.Module):
     def __init__(self, mask=False):
         super(TripletNet, self).__init__()
@@ -40,6 +41,40 @@ class TripletNet(nn.Module):
         positive_out = self.forward_one(positive)
         negative_out = self.forward_one(negative)
         return anchor_out, positive_out, negative_out
+
+
+class TripletLeNet(TripletNet):
+    def __init__(self, *args, **kwargs):
+        super(TripletLeNet, self).__init__(*args, **kwargs)
+        # Feature extraction layers
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 6, 5, 1),
+            nn.MaxPool2d(2, stride=2),
+            nn.Conv2d(6, 16, 5, 1),
+            nn.MaxPool2d(2, stride=2),
+        )
+        # Embedding layers
+        self.linear = nn.Sequential(
+            nn.Dropout(p=0.5, inplace=True),
+            nn.Linear(16 * 61 * 61, 120),
+            nn.GELU(),
+            nn.Linear(120, 83),
+            nn.GELU(),
+        )
+        # Euclidean Distance
+        self.distance = nn.PairwiseDistance(p=2)  # Changed to Euclidean distance
+
+    def forward_one(self, x):
+        x = self.features(x)
+        x = x.view(x.size()[0], -1)
+        x = self.linear(x)
+        return x
+
+    def compute_distances(self, anchor_out, positive_out, negative_out):
+        # Calculate distances between anchor-positive and anchor-negative
+        pos_dist = self.distance(anchor_out, positive_out)
+        neg_dist = self.distance(anchor_out, negative_out)
+        return pos_dist, neg_dist
 
 class SiameseNet(nn.Module):
     def __init__(self, mask=False):
