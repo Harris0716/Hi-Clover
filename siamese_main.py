@@ -13,6 +13,7 @@ from torch_plus.loss import ContrastiveLoss
 import argparse
 from HiSiNet.reference_dictionaries import reference_genomes
 import json
+import os
 
 parser = argparse.ArgumentParser(description='Siamese network')
 parser.add_argument('model_name',  type=str,
@@ -39,90 +40,139 @@ parser.add_argument("data_inputs", nargs='+',help="keys from dictionary containi
 
 args = parser.parse_args()
 
-cuda = torch.device("cuda")
+os.makedirs(args.outpath, exist_ok=True)
+
+
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    n_gpu = torch.cuda.device_count()
+    print("Using {} GPUs".format(n_gpu))
+else:
+    device = torch.device("cpu")
+    print("Using CPU")
 
 with open(args.json_file) as json_file:
     dataset = json.load(json_file)
 
 torch.manual_seed(args.seed)
 
-#dataset all about
-Siamese = GroupedHiCDataset([ SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["training"]],
-             reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
+# Initialize dataset
+Siamese = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["training"]],
+            reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
 train_sampler = torch.utils.data.RandomSampler(Siamese)
 
-#CNN params.
+# Initialize CNN parameters
 batch_size, learning_rate = args.batch_size, args.learning_rate
-no_of_batches= np.floor(len(Siamese)/args.batch_size)
-dataloader = DataLoader(Siamese, batch_size=args.batch_size, sampler = train_sampler)
+no_of_batches = np.floor(len(Siamese) / args.batch_size)
+dataloader = DataLoader(Siamese,
+                        batch_size=args.batch_size,
+                        sampler=train_sampler,
+                        num_workers=4,
+                        pin_memory=True)
 
-#validation
-Siamese_validation  = GroupedHiCDataset([ SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["validation"]],
-             reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
+# Create validation dataset and dataloader
+Siamese_validation = GroupedHiCDataset(
+    [SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["validation"]],
+                       reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
 test_sampler = SequentialSampler(Siamese_validation)
-batches_validation = np.ceil(len(Siamese_validation)/100)
-dataloader_validation = DataLoader(Siamese_validation, batch_size=100, sampler = test_sampler)
+batches_validation = np.ceil(len(Siamese_validation) / 100)
+dataloader_validation = DataLoader(Siamese_validation,
+                                   batch_size=100,
+                                   sampler=test_sampler,
+                                   num_workers=4,
+                                   pin_memory=True)
 
-# Convolutional neural network (two convolutional layers)
-model = eval("models."+ args.model_name)(mask=args.mask).to(cuda)
-model_save_path = args.outpath + args.model_name  +'_' + str(learning_rate) +'_'+ str(batch_size)+'_' + str(args.seed) 
-torch.save(model.state_dict(),model_save_path+'.ckpt')
+# Initialize the Convolutional neural network
+model = eval("models." + args.model_name)(mask=args.mask)
+if torch.cuda.device_count() > 1:
+    model = nn.DataParallel(model)
+model = model.to(device)
 
-#classification net 
-nn_model = models.LastLayerNN().to(cuda)
-torch.save(nn_model.state_dict(),model_save_path+"_nn.ckpt")
+model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(
+    args.seed)
+torch.save(model.state_dict(), model_save_path + '.ckpt')
 
-# Loss and optimizer
-criterion = ContrastiveLoss() #tnn.CosineEmbeddingLoss() #
+# Initialize classification network
+nn_model = models.LastLayerNN()
+if torch.cuda.device_count() > 1:
+    nn_model = nn.DataParallel(nn_model)
+nn_model = nn_model.to(device)
+torch.save(nn_model.state_dict(), model_save_path + "_nn.ckpt")
+
+# Initialize loss functions and optimizer
+criterion = ContrastiveLoss()
 criterion2 = nn.CrossEntropyLoss()
 optimizer = optim.Adagrad(model.parameters())
 
-#  Training
+# Training loop
 for epoch in range(args.epoch_training):
-    #training model
+    model.train()
+    nn_model.train()
     running_loss1, running_loss2 = 0.0, 0.0
     running_validation_loss = 0.0
+
+    # Training phase
     for i, data in enumerate(dataloader):
-        input1, input2,  labels = data
-        input1, input2 = input1.to(cuda), input2.to(cuda)
-        labels = labels.to(cuda)
-        # zero gradients
+        input1, input2, labels = data
+        input1, input2 = input1.to(device), input2.to(device)
+        labels = labels.to(device)
+
         optimizer.zero_grad()
+
         output1, output2 = model(input1, input2)
         output_class = nn_model(output1, output2)
+
         loss2 = criterion2(output_class, labels)
-        labels = labels.type(torch.FloatTensor).to(cuda)
+        labels = labels.type(torch.FloatTensor).to(device)
         loss1 = criterion(output1, output2, labels)
-        loss = args.bias*loss1 + loss2
+        loss = args.bias * loss1 + loss2
+
         loss.backward()
         optimizer.step()
+
         running_loss1 += loss1.item()
         running_loss2 += loss2.item()
-        if (i+1) % no_of_batches == 0:
-            print ('Epoch [{}/{}], Loss1: {:.4f}, Loss2: {:.4f}'
-            .format(epoch+1, i, running_loss1/no_of_batches, running_loss2/no_of_batches))
-    #obtaining validation loss
-    for i, data in enumerate(dataloader_validation):
-        input1,  input2, labels = data
-        input1, input2 = input1.to(cuda), input2.to(cuda)
-        labels = labels.type(torch.FloatTensor).to(cuda)
-        output1, output2 = model(input1, input2)
-        loss = criterion(output1, output2, labels)
-        running_validation_loss += loss.item()
-    #evaluating model
-    print ('Epoch [{}/{}], Loss: {:.4f}'
-            .format(epoch+1, i, running_validation_loss/batches_validation ))
-    if (epoch>args.epoch_enforced_training):
-        prev_validation_loss = min(prev_validation_loss,running_validation_loss)
-        if (float(prev_validation_loss) < 1.1*float(running_validation_loss)):
+
+        if (i + 1) % no_of_batches == 0:
+            print('Epoch [{}/{}], Step [{}/{}], Loss1: {:.4f}, Loss2: {:.4f}'.format(
+                epoch + 1,
+                args.epoch_training,
+                i + 1,
+                int(no_of_batches),
+                running_loss1 / no_of_batches,
+                running_loss2 / no_of_batches
+            ))
+
+    # Validation phase
+    model.eval()
+    nn_model.eval()
+    with torch.no_grad():
+        for i, data in enumerate(dataloader_validation):
+            input1, input2, labels = data
+            input1, input2 = input1.to(device), input2.to(device)
+            labels = labels.type(torch.FloatTensor).to(device)
+
+            output1, output2 = model(input1, input2)
+            loss = criterion(output1, output2, labels)
+            running_validation_loss += loss.item()
+
+    print('Epoch [{}/{}], Validation Loss: {:.4f}'.format(
+        epoch + 1,
+        args.epoch_training,
+        running_validation_loss / batches_validation
+    ))
+
+    # Early stopping check
+    if epoch > args.epoch_enforced_training:
+        prev_validation_loss = min(prev_validation_loss, running_validation_loss)
+        if float(prev_validation_loss) < 1.1 * float(running_validation_loss):
+            print("Early stopping triggered")
             break
     else:
         prev_validation_loss = running_validation_loss
 
-    torch.save(model.state_dict(), model_save_path+'.ckpt')
-    torch.save(nn_model.state_dict(),model_save_path+"_nn.ckpt")
+    # Save model checkpoints
+    torch.save(model.state_dict(), model_save_path + '.ckpt')
+    torch.save(nn_model.state_dict(), model_save_path + "_nn.ckpt")
 
-
-
-
-
+print("Training completed")

@@ -1,0 +1,7 @@
+LICENSE
+setup.py
+HiSiNet.egg-info/PKG-INFO
+HiSiNet.egg-info/SOURCES.txt
+HiSiNet.egg-info/dependency_links.txt
+HiSiNet.egg-info/requires.txt
+HiSiNet.egg-info/top_level.txt

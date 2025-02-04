@@ -14,6 +14,32 @@ class LastLayerNN(nn.Module):
             )
     def forward(self, x1, x2):
         return self.net(x1-x2)
+class TripletNet(nn.Module):
+    def __init__(self, mask=False):
+        super(TripletNet, self).__init__()
+        if mask:
+            mask = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
+            self.mask = nn.Parameter(torch.tensor([mask], dtype=torch.int32), requires_grad=False)
+
+    def mask_data(self, x):
+        if hasattr(self, "mask"):
+            x = torch.mul(self.mask, x)
+        return x
+
+    def forward_one(self, x):
+        raise NotImplementedError
+
+    def forward(self, anchor, positive, negative):
+        # Apply mask to all three inputs
+        anchor = self.mask_data(anchor)
+        positive = self.mask_data(positive)
+        negative = self.mask_data(negative)
+
+        # Get embeddings for all three inputs
+        anchor_out = self.forward_one(anchor)
+        positive_out = self.forward_one(positive)
+        negative_out = self.forward_one(negative)
+        return anchor_out, positive_out, negative_out
 
 class SiameseNet(nn.Module):
     def __init__(self, mask=False):

@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: HiSiNet
+Version: 0.0
+Summary: HiSiNet: a tool for Hi-C analysis
+Author: Ediem Al-jibury
+Author-email: ealjibur@ic.ac.uk
+Requires-Python: >=3.6
+License-File: LICENSE
+Requires-Dist: cooler==0.8.10
+Requires-Dist: frozendict==1.2
+Requires-Dist: scipy>=1.5.2
+Requires-Dist: torch>=1.6.0
+Requires-Dist: numpy>=1.18.0
+Requires-Dist: Cython==0.29.21
+Requires-Dist: hic-straw@ git+https://github.com/aidenlab/straw.git@v0.0.8

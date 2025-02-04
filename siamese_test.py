@@ -2,7 +2,6 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 import torch.nn.functional as F
 import torch.nn as nn
-#from torch_plus import additional_samplers
 from HiSiNet.HiCDatasetClass import  HiCDatasetDec, SiameseHiCDataset,GroupedHiCDataset
 import HiSiNet.models as models
 import torch
@@ -24,19 +23,16 @@ parser.add_argument("data_inputs", nargs='+',help="keys from dictionary containi
 
 args = parser.parse_args()
 
-
 with open(args.json_file) as json_file:
     dataset = json.load(json_file)
-
-
 
 def test_model(model, dataloader):
     distances = np.array([])
     labels = np.array([])
     for _, data in enumerate(dataloader):
         input1, input2, label = data
-        input1, input2 = input1.to(cuda), input2.to(cuda)
-        label = label.type(torch.FloatTensor).to(cuda)
+        input1, input2 = input1.to(device), input2.to(device)
+        label = label.type(torch.FloatTensor).to(device)
         output1, output2 = model(input1, input2)
         predicted = F.pairwise_distance(output1,output2)
         distances = np.concatenate((distances, predicted.cpu().detach().numpy()))
@@ -44,18 +40,30 @@ def test_model(model, dataloader):
         labels  = np.concatenate((labels, label.cpu().detach().numpy()))
     return distances, labels
 
-cuda = torch.device("cuda:0")
-model = eval("models."+ args.model_name)(mask=args.mask).to(cuda)
+# Set device
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    n_gpu = torch.cuda.device_count()
+    print("Using {} GPUs".format(n_gpu))
+else:
+    device = torch.device("cpu")
+    print("Using CPU")
+
+# Load model
+model = eval("models."+ args.model_name)(mask=args.mask)
+if torch.cuda.device_count() > 1:
+    model = nn.DataParallel(model)
+model = model.to(device)
 model.load_state_dict(torch.load(args.model_infile))
 model.eval()
 
-#dataset all
+# Load training and validation datasets
 Siamese = GroupedHiCDataset([ SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["training"]+ dataset[data_name]["validation"])],
              reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
 test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler = test_sampler)
 
-# Test the model
+# Test the model on training and validation data
 distances, labels = test_model(model, dataloader)
 
 mx = max(distances)
@@ -74,13 +82,13 @@ plt.xlabel("euclidean distance of representation")
 plt.savefig(args.model_infile.split(".ckpt")[0]+"_train_distribution.pdf")
 plt.close()
 
-#dataset test
+# Load test dataset
 Siamese = GroupedHiCDataset([ SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["test"])],
              reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
 test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler = test_sampler)
 
-# Test the model
+# Test the model on test data
 distances, labels = test_model(model, dataloader)
 
 global_rate = sum(((distances<intersect)==(labels==0)) )/len(distances)
