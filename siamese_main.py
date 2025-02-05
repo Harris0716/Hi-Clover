@@ -5,17 +5,16 @@ import torch.optim as optim
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.nn as nn
-#from torch_plus import additional_samplers
-from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset,GroupedHiCDataset
+from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedHiCDataset
 import HiSiNet.models as models
 import torch
-from torch_plus.loss import ContrastiveLoss, TripletLoss
+from torch_plus.loss import TripletLoss
 import argparse
 from HiSiNet.reference_dictionaries import reference_genomes
 import json
 import os
 
-parser = argparse.ArgumentParser(description='Siamese network')
+parser = argparse.ArgumentParser(description='Triplet network')
 parser.add_argument('model_name',  type=str,
                     help='a string indicating a model from models')
 parser.add_argument('json_file',  type=str,
@@ -34,14 +33,13 @@ parser.add_argument('--seed',  type=int, default=30004,
                     help='an int for the seed')
 parser.add_argument('--mask',  type=bool, default=False,
                     help='an argument specifying if the diagonal should be masked')
-parser.add_argument('--bias',  type=float, default=2,
-                    help='an argument specifying the bias towards the contrastive loss function')
+parser.add_argument('--margin',  type=float, default=1.0,
+                    help='margin for triplet loss')
 parser.add_argument("data_inputs", nargs='+',help="keys from dictionary containing paths for training and validation sets.")
 
 args = parser.parse_args()
 
 os.makedirs(args.outpath, exist_ok=True)
-
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -57,104 +55,90 @@ with open(args.json_file) as json_file:
 torch.manual_seed(args.seed)
 
 # Initialize dataset
-Siamese = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["training"]],
-            reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
-train_sampler = torch.utils.data.RandomSampler(Siamese)
+Triplet = GroupedHiCDataset([
+    TripletHiCDataset(
+        [HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["training"]],
+            reference=reference_genomes[dataset[data_name]["reference"]])
+    for data_name in args.data_inputs])
+train_sampler = torch.utils.data.RandomSampler(Triplet)
 
 # Initialize CNN parameters
 batch_size, learning_rate = args.batch_size, args.learning_rate
-no_of_batches = np.floor(len(Siamese) / args.batch_size)
-dataloader = DataLoader(Siamese,
-                        batch_size=args.batch_size,
-                        sampler=train_sampler,
-                        num_workers=4,
-                        pin_memory=True)
+no_of_batches = np.floor(len(Triplet) / args.batch_size)
+dataloader = DataLoader(Triplet,
+                       batch_size=args.batch_size,
+                       sampler=train_sampler,
+                       num_workers=4,
+                       pin_memory=True)
 
 # Create validation dataset and dataloader
-Siamese_validation = GroupedHiCDataset(
-    [SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["validation"]],
+Triplet_validation = GroupedHiCDataset(
+    [TripletHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["validation"]],
                        reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
-test_sampler = SequentialSampler(Siamese_validation)
-batches_validation = np.ceil(len(Siamese_validation) / 100)
-dataloader_validation = DataLoader(Siamese_validation,
-                                   batch_size=100,
-                                   sampler=test_sampler,
-                                   num_workers=4,
-                                   pin_memory=True)
+test_sampler = SequentialSampler(Triplet_validation)
+batches_validation = np.ceil(len(Triplet_validation) / 100)
+dataloader_validation = DataLoader(Triplet_validation,
+                                 batch_size=100,
+                                 sampler=test_sampler,
+                                 num_workers=4,
+                                 pin_memory=True)
 
-# Initialize the Convolutional neural network
+# Initialize the Triplet network
 model = eval("models." + args.model_name)(mask=args.mask)
 if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 model = model.to(device)
 
-model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(
-    args.seed)
+model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(args.seed)
 torch.save(model.state_dict(), model_save_path + '.ckpt')
 
-# Initialize classification network
-nn_model = models.LastLayerNN()
-if torch.cuda.device_count() > 1:
-    nn_model = nn.DataParallel(nn_model)
-nn_model = nn_model.to(device)
-torch.save(nn_model.state_dict(), model_save_path + "_nn.ckpt")
-
-# Initialize loss functions and optimizer
-# criterion = ContrastiveLoss()
-criterion = TripletLoss()
-criterion2 = nn.CrossEntropyLoss()
+# Initialize loss function and optimizer
+criterion = TripletLoss(margin=args.margin)
 optimizer = optim.Adagrad(model.parameters())
 
 # Training loop
 for epoch in range(args.epoch_training):
     model.train()
-    nn_model.train()
-    running_loss1, running_loss2 = 0.0, 0.0
+    running_loss = 0.0
     running_validation_loss = 0.0
 
     # Training phase
     for i, data in enumerate(dataloader):
-        input1, input2, labels = data
-        input1, input2 = input1.to(device), input2.to(device)
-        labels = labels.to(device)
+        anchor, positive, negative = data
+        anchor = anchor.to(device)
+        positive = positive.to(device)
+        negative = negative.to(device)
 
         optimizer.zero_grad()
 
-        output1, output2 = model(input1, input2)
-        output_class = nn_model(output1, output2)
-
-        loss2 = criterion2(output_class, labels)
-        labels = labels.type(torch.FloatTensor).to(device)
-        loss1 = criterion(output1, output2, labels)
-        loss = args.bias * loss1 + loss2
+        anchor_out, positive_out, negative_out = model(anchor, positive, negative)
+        loss = criterion(anchor_out, positive_out, negative_out)
 
         loss.backward()
         optimizer.step()
 
-        running_loss1 += loss1.item()
-        running_loss2 += loss2.item()
+        running_loss += loss.item()
 
         if (i + 1) % no_of_batches == 0:
-            print('Epoch [{}/{}], Step [{}/{}], Loss1: {:.4f}, Loss2: {:.4f}'.format(
+            print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(
                 epoch + 1,
                 args.epoch_training,
                 i + 1,
                 int(no_of_batches),
-                running_loss1 / no_of_batches,
-                running_loss2 / no_of_batches
+                running_loss / no_of_batches
             ))
 
     # Validation phase
     model.eval()
-    nn_model.eval()
     with torch.no_grad():
         for i, data in enumerate(dataloader_validation):
-            input1, input2, labels = data
-            input1, input2 = input1.to(device), input2.to(device)
-            labels = labels.type(torch.FloatTensor).to(device)
+            anchor, positive, negative = data
+            anchor = anchor.to(device)
+            positive = positive.to(device)
+            negative = negative.to(device)
 
-            output1, output2 = model(input1, input2)
-            loss = criterion(output1, output2, labels)
+            anchor_out, positive_out, negative_out = model(anchor, positive, negative)
+            loss = criterion(anchor_out, positive_out, negative_out)
             running_validation_loss += loss.item()
 
     print('Epoch [{}/{}], Validation Loss: {:.4f}'.format(
@@ -174,6 +158,5 @@ for epoch in range(args.epoch_training):
 
     # Save model checkpoints
     torch.save(model.state_dict(), model_save_path + '.ckpt')
-    torch.save(nn_model.state_dict(), model_save_path + "_nn.ckpt")
 
 print("Training completed")

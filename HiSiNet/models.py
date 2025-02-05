@@ -62,7 +62,7 @@ class TripletLeNet(TripletNet):
             nn.GELU(),
         )
         # Euclidean Distance
-        self.distance = nn.PairwiseDistance(p=2)  # Changed to Euclidean distance
+        self.distance = nn.PairwiseDistance(p=2)
 
     def forward_one(self, x):
         x = self.features(x)
