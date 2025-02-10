@@ -34,7 +34,7 @@ if torch.cuda.device_count() > 1:
 model = model.to(device)
 
 # Load the state dict, removing 'module.' prefix for DataParallel models
-state_dict = torch.load(args.model_infile)
+state_dict = torch.load(args.model_infile, weights_only=True)
 state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
 
 model.load_state_dict(state_dict)
