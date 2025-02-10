@@ -159,6 +159,6 @@ for epoch in range(args.epoch_training):
         prev_validation_loss = running_validation_loss
 
     # Save model checkpoints
-    torch.save(model.state_dict(), model_save_path + '_checkpoint.ckpt')
+    torch.save(model.state_dict(), model_save_path + '.ckpt')
 
 print("Training completed")
