@@ -90,7 +90,7 @@ global_rate = sum(((anchor_distances < negative_distances) == (labels == 0))) / 
 TR_rate = sum((anchor_distances < negative_distances) & (labels == 0)) / sum(labels == 0)
 BC_rate = sum((anchor_distances > negative_distances) & (labels == 1)) / sum(labels == 1)
 
-print(f'Global rate: {:.4f}, Replicate rate: {:.4f}, Condition rate: {:.4f}'
+print('Global rate: {:.4f}, Replicate rate: {:.4f}, Condition rate: {:.4f}'
       .format(global_rate, TR_rate, BC_rate))
 
 # 繪製測試集的距離分佈
