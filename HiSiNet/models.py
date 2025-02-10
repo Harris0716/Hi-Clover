@@ -74,6 +74,8 @@ class TripletLeNet(TripletNet):
         neg_dist = torch.norm(anchor_out - negative_out, dim=1, p=2)
         return pos_dist, neg_dist
 
+# ------以下暫不更動-----
+
 class SiameseNet(nn.Module):
     def __init__(self, mask=False):
         super(SiameseNet, self).__init__()
