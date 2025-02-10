@@ -64,7 +64,7 @@ class TripletLeNet(TripletNet):
 
     def forward_one(self, x):
         x = self.features(x)
-        x = x.view(x.size()[0], -1)
+        x = x.view(x.size()[0], -1) # reshape
         x = self.linear(x)
         return x
 

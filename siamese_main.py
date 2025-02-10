@@ -35,7 +35,7 @@ parser.add_argument('--mask',  type=bool, default=False,
                     help='an argument specifying if the diagonal should be masked')
 parser.add_argument('--margin',  type=float, default=1.0,
                     help='margin for triplet loss')
-parser.add_argument("data_inputs", nargs='+',help="keys from dictionary containing paths for training and validation sets.")
+parser.add_argument("data_inputs", nargs='+', help="keys from dictionary containing paths for training and validation sets.")
 
 args = parser.parse_args()
 
@@ -58,13 +58,13 @@ torch.manual_seed(args.seed)
 Triplet = GroupedHiCDataset([
     TripletHiCDataset(
         [HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["training"]],
-            reference=reference_genomes[dataset[data_name]["reference"]])
+        reference=reference_genomes[dataset[data_name]["reference"]])
     for data_name in args.data_inputs])
 train_sampler = torch.utils.data.RandomSampler(Triplet)
 
 # Initialize CNN parameters
 batch_size, learning_rate = args.batch_size, args.learning_rate
-no_of_batches = np.floor(len(Triplet) / args.batch_size)
+no_of_batches = len(Triplet) // args.batch_size
 dataloader = DataLoader(Triplet,
                        batch_size=args.batch_size,
                        sampler=train_sampler,
@@ -90,6 +90,8 @@ if torch.cuda.device_count() > 1:
 model = model.to(device)
 
 model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(args.seed)
+
+# Save initial model
 torch.save(model.state_dict(), model_save_path + '.ckpt')
 
 # Initialize loss function and optimizer
@@ -97,6 +99,8 @@ criterion = TripletLoss(margin=args.margin)
 optimizer = optim.Adagrad(model.parameters())
 
 # Training loop
+prev_validation_loss = float('inf')  # Initialize validation loss for early stopping
+
 for epoch in range(args.epoch_training):
     model.train()
     running_loss = 0.0
@@ -148,15 +152,13 @@ for epoch in range(args.epoch_training):
     ))
 
     # Early stopping check
-    if epoch > args.epoch_enforced_training:
-        prev_validation_loss = min(prev_validation_loss, running_validation_loss)
-        if float(prev_validation_loss) < 1.1 * float(running_validation_loss):
+    if epoch >= args.epoch_enforced_training:
+        if running_validation_loss > 1.1 * prev_validation_loss:
             print("Early stopping triggered")
             break
-    else:
         prev_validation_loss = running_validation_loss
 
     # Save model checkpoints
-    torch.save(model.state_dict(), model_save_path + '.ckpt')
+    torch.save(model.state_dict(), model_save_path + '_checkpoint.ckpt')
 
 print("Training completed")
