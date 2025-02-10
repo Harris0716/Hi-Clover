@@ -124,7 +124,7 @@ for epoch in range(args.epoch_training):
         running_loss += loss.item()
 
         if (i + 1) % no_of_batches == 0:
-            print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(
+            print(f'Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(
                 epoch + 1,
                 args.epoch_training,
                 i + 1,
