@@ -104,7 +104,7 @@ global_rate = sum(((distances < np.mean(distances)) == (labels == 0))) / len(dis
 TR_rate = sum((distances < np.mean(distances)) & (labels == 0)) / sum(labels == 0)
 BC_rate = sum((distances > np.mean(distances)) & (labels == 1)) / sum(labels == 1)
 
-print('Global rate: {:.4f}, Replicate rate: {:.4f}, Condition rate: {:.4f}'
+print(f'Global rate: {:.4f}, Replicate rate: {:.4f}, Condition rate: {:.4f}'
       .format(global_rate, TR_rate, BC_rate))
 
 # Plot the distance distribution for test set
