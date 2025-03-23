@@ -7,100 +7,123 @@ import matplotlib.pyplot as plt
 import argparse
 import json
 
-from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedHiCDataset
+from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset, GroupedHiCDataset
 import HiSiNet.models as models
 from HiSiNet.reference_dictionaries import reference_genomes
 
-parser = argparse.ArgumentParser(description='Triplet network testing module')
-parser.add_argument('model_name', type=str,
+
+parser = argparse.ArgumentParser(description='Siamese network testing module')
+parser.add_argument('model_name',  type=str,
                     help='a string indicating a model from models')
-parser.add_argument('json_file', type=str,
+parser.add_argument('json_file',  type=str,
                     help='a file location for the json dictionary containing file paths')
-parser.add_argument('model_infile', type=str,
+parser.add_argument('model_infile',  type=str,
                     help='a string indicating the model location file')
-parser.add_argument('--mask', type=bool, default=False,
+parser.add_argument('--mask',  type=bool, default=False,
                     help='an argument specifying if the diagonal should be masked')
 parser.add_argument("data_inputs", nargs='+', help="keys from dictionary containing paths for training and validation sets.")
 
 args = parser.parse_args()
 
-# 加載 dataset 配置文件
 with open(args.json_file) as json_file:
     dataset = json.load(json_file)
 
-# 設置設備
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-    n_gpu = torch.cuda.device_count()
-    print("Using {} GPUs".format(n_gpu))
-else:
-    device = torch.device("cpu")
-    print("Using CPU")
 
-# 定義測試函數來計算 triplet 的距離
-def test_triplet_similarity(model, dataloader):
-    anchor_distances = np.array([])
-    negative_distances = np.array([])
+# 定義從訓練好的 Triplet 模型中提取 CNN 作為 Siamese 的基礎
+class SiameseFromTriplet(nn.Module):
+    def __init__(self, triplet_model, mask=False):
+        super(SiameseFromTriplet, self).__init__()
+        self.encoder = triplet_model
+        self.mask = mask
+
+    def forward(self, input1, input2):
+        # 兩個輸入的特徵提取
+        output1 = self.encoder(input1)
+        output2 = self.encoder(input2)
+
+        return output1, output2
+
+# 載入訓練好的 Triplet 模型
+cuda = torch.device("cuda:0")
+triplet_model = eval("models." + args.model_name)(mask=args.mask).to(cuda)
+state_dict = torch.load(args.model_infile, weights_only=True)
+new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+triplet_model.load_state_dict(new_state_dict)
+triplet_model.eval()
+
+# 基於 Triplet 模型構建 Siamese 模型
+siamese_model = SiameseFromTriplet(triplet_model).to(cuda)
+
+# 定義測試函數來計算相似度
+def test_model(model, dataloader):
+    distances = np.array([])
     labels = np.array([])
-
     for _, data in enumerate(dataloader):
-        anchor, positive, negative, label = data
-        anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
-
-        # 使用 Triplet 網絡進行前向傳播
-        anchor_out, positive_out, negative_out = model(anchor, positive, negative)
-
-        # 計算 anchor 和 positive 之間的距離 (使用 torch.norm)
-        positive_distance = torch.norm(anchor_out - positive_out, p=2, dim=1)  # Euclidean 距離
-        # 計算 anchor 和 negative 之間的距離 (使用 torch.norm)
-        negative_distance = torch.norm(anchor_out - negative_out, p=2, dim=1)  # Euclidean 距離
-
-        # 記錄距離和標籤
-        anchor_distances = np.concatenate((anchor_distances, positive_distance.cpu().detach().numpy()))
-        negative_distances = np.concatenate((negative_distances, negative_distance.cpu().detach().numpy()))
+        input1, input2, label = data
+        input1, input2 = input1.to(cuda), input2.to(cuda)
+        label = label.type(torch.FloatTensor).to(cuda)
+        
+        # 計算兩個樣本的輸出
+        output1, output2 = model(input1, input2)
+        
+        # 計算兩者的歐式距離
+        predicted = F.pairwise_distance(output1, output2)
+        distances = np.concatenate((distances, predicted.cpu().detach().numpy()))
         labels = np.concatenate((labels, label.cpu().detach().numpy()))
-
-    return anchor_distances, negative_distances, labels
-
-# 加載模型
-model = eval("models." + args.model_name)(mask=args.mask)
-if torch.cuda.device_count() > 1:
-    model = nn.DataParallel(model)
-model = model.to(device)
-model.load_state_dict(torch.load(args.model_infile, weights_only=True))
-model.eval()
+    
+    return distances, labels
 
 # 加載訓練和驗證數據集
-Siamese = GroupedHiCDataset([TripletHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["training"] + dataset[data_name]["validation"])],
-                                reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
-
+Siamese = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["training"] + dataset[data_name]["validation"])],
+             reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
 test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler=test_sampler)
 
-# 使用 Triplet 測試函數測試模型
-anchor_distances, negative_distances, labels = test_triplet_similarity(model, dataloader)
+# 測試模型並計算距離
+distances, labels = test_model(siamese_model, dataloader)
 
 # 計算最大和最小距離
-mx = max(np.max(anchor_distances), np.max(negative_distances))
-mn = min(np.min(anchor_distances[anchor_distances > 0]), np.min(negative_distances[negative_distances > 0]))
+mx = max(distances)
+mn = min(distances[distances > 0])
 rng = np.arange(mn, mx, (mx - mn) / 200)
 
-# 計算分類準確率
-global_rate = sum(((anchor_distances < negative_distances) == (labels == 0))) / len(anchor_distances)
-TR_rate = sum((anchor_distances < negative_distances) & (labels == 0)) / sum(labels == 0)
-BC_rate = sum((anchor_distances > negative_distances) & (labels == 1)) / sum(labels == 1)
+a = plt.hist(distances[(labels == 0)], bins=rng, density=True, label='replicates', alpha=0.5, color='#108690')
+b = plt.hist(distances[(labels == 1)], bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
+intersect = a[1][np.argwhere(np.diff(np.sign(a[0] - b[0])))[0]]
+plt.axvline(intersect, color='k')
+plt.xticks(np.arange(0, np.ceil(mx), 1))
+plt.legend()
+plt.title("distance of train and validation from " + args.model_infile.split("/")[-1] + " on: " + ", ".join(args.data_inputs))
+plt.ylabel("density")
+plt.xlabel("euclidean distance of representation")
+plt.savefig(args.model_infile.split(".ckpt")[0] + "_train_distribution.pdf")
+plt.close()
 
-print('Global rate: {:.4f}, Replicate rate: {:.4f}, Condition rate: {:.4f}'
+# 測試數據集
+Siamese_test = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["test"]],
+             reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
+test_sampler = SequentialSampler(Siamese_test)
+dataloader_test = DataLoader(Siamese_test, batch_size=100, sampler=test_sampler)
+
+# 測試模型
+distances, labels = test_model(siamese_model, dataloader_test)
+
+# 計算分類準確率
+global_rate = sum(((distances < intersect) == (labels == 0))) / len(distances)
+TR_rate = sum((distances < intersect) & (labels == 0)) / sum(labels == 0)
+BC_rate = sum((distances > intersect) & (labels == 1)) / sum(labels == 1)
+
+print('global rate: {:.4f}, replicate rate: {:.4f}, condition rate: {:.4f}'
       .format(global_rate, TR_rate, BC_rate))
 
 # 繪製測試集的距離分佈
-plt.hist(anchor_distances[(labels == 0)], bins=rng, density=True, label='replicates', alpha=0.5, color='#108690')
-plt.hist(negative_distances[(labels == 1)], bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
-plt.axvline(np.mean(anchor_distances), color='k')
+a = plt.hist(distances[(labels == 0)], bins=rng, density=True, label='replicates', alpha=0.5, color='#108690')
+b = plt.hist(distances[(labels == 1)], bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
+plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), 1))
-plt.title("Triplet Network Distance for test on: {}".format(", ".join(args.data_inputs)))
-plt.ylabel("Density")
-plt.xlabel("Euclidean Distance of Representation")
+plt.title("distance of test from " + args.model_infile.split("/")[-1] + " on: " + ", ".join(args.data_inputs))
+plt.ylabel("density")
+plt.xlabel("euclidean distance of representation")
 plt.legend()
-plt.savefig(args.model_infile.split(".ckpt")[0] + "_test_triplet_distribution.pdf")
+plt.savefig(args.model_infile.split(".ckpt")[0] + "_test_distribution.pdf")
 plt.close()
