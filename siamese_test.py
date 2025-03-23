@@ -1,38 +1,23 @@
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, SequentialSampler
-import torch.nn.functional as F
-import torch.nn as nn
-from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedHiCDataset
-import HiSiNet.models as models
 import torch
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import argparse
-from HiSiNet.reference_dictionaries import reference_genomes
+from torch.utils.data import DataLoader, SequentialSampler
 import json
+import argparse
 
-# SimplifiedTripletLeNet class definition
-class SimplifiedTripletLeNet(nn.Module):
-    def __init__(self, original_model):
-        super(SimplifiedTripletLeNet, self).__init__()
-        self.model = original_model
+# 引入 SimplifiedTripletLeNet 和 TripletLeNet
+from your_model_file import TripletLeNet, SimplifiedTripletLeNet  # 根據你的文件修改
 
-    def forward(self, anchor, positive=None, negative=None):
-        # 只使用 anchor 和 positive
-        anchor_out = self.model.encoder(anchor)
-        positive_out = self.model.encoder(positive)
-        return anchor_out, positive_out
-
-# Argument parser for command line inputs
+# 解析命令行參數
 parser = argparse.ArgumentParser(description='Triplet network testing module')
 parser.add_argument('model_name', type=str, help='a string indicating a model from models')
 parser.add_argument('json_file', type=str, help='a file location for the json dictionary containing file paths')
 parser.add_argument('model_infile', type=str, help='a string indicating the model location file')
 parser.add_argument('--mask', type=bool, default=False, help='an argument specifying if the diagonal should be masked')
 parser.add_argument("data_inputs", nargs='+', help="keys from dictionary containing paths for training and validation sets.")
-
 args = parser.parse_args()
 
-# Loading the dataset from the provided json file
 with open(args.json_file) as json_file:
     dataset = json.load(json_file)
 
@@ -42,10 +27,10 @@ def test_triplet_model(model, dataloader):
 
     with torch.no_grad():
         for _, data in enumerate(dataloader):
-            anchor, positive, _ = data  # Ignore negative, we only use anchor and positive
+            anchor, positive, _ = data  # Ignore negative
             anchor, positive = anchor.to(cuda), positive.to(cuda)
 
-            # Forward pass (only anchor and positive)
+            # Forward pass
             anchor_out, positive_out = model(anchor, positive)  # Only anchor and positive outputs
 
             # Compute distances
@@ -58,12 +43,11 @@ def test_triplet_model(model, dataloader):
     return d_ap
 
 cuda = torch.device("cuda:0")
+# 假設你有 TripletLeNet 模型的檔案
+original_model = TripletLeNet(*args, **kwargs)
+simplified_model = SimplifiedTripletLeNet(original_model).to(cuda)
 
-# Load the original model and wrap it in SimplifiedTripletLeNet
-original_model = eval("models." + args.model_name)(mask=args.mask).to(cuda)
-simplified_model = SimplifiedTripletLeNet(original_model)
-
-# Load the model state dict
+# 加載預訓練模型的權重
 state_dict = torch.load(args.model_infile)
 simplified_model.load_state_dict(state_dict, strict=False)
 
@@ -78,7 +62,7 @@ TripletDataset = GroupedHiCDataset([
 test_sampler = SequentialSampler(TripletDataset)
 dataloader = DataLoader(TripletDataset, batch_size=100, sampler=test_sampler)
 
-# train/validation set
+# Train/validation set
 d_ap = test_triplet_model(simplified_model, dataloader)
 
 # Find threshold for separation
