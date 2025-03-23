@@ -10,6 +10,19 @@ import argparse
 from HiSiNet.reference_dictionaries import reference_genomes
 import json
 
+# SimplifiedTripletLeNet class definition
+class SimplifiedTripletLeNet(nn.Module):
+    def __init__(self, original_model):
+        super(SimplifiedTripletLeNet, self).__init__()
+        self.model = original_model
+
+    def forward(self, anchor, positive=None, negative=None):
+        # 只使用 anchor 和 positive
+        anchor_out = self.model.encoder(anchor)
+        positive_out = self.model.encoder(positive)
+        return anchor_out, positive_out
+
+# Argument parser for command line inputs
 parser = argparse.ArgumentParser(description='Triplet network testing module')
 parser.add_argument('model_name', type=str, help='a string indicating a model from models')
 parser.add_argument('json_file', type=str, help='a file location for the json dictionary containing file paths')
@@ -19,6 +32,7 @@ parser.add_argument("data_inputs", nargs='+', help="keys from dictionary contain
 
 args = parser.parse_args()
 
+# Loading the dataset from the provided json file
 with open(args.json_file) as json_file:
     dataset = json.load(json_file)
 
@@ -28,10 +42,10 @@ def test_triplet_model(model, dataloader):
 
     with torch.no_grad():
         for _, data in enumerate(dataloader):
-            anchor, positive, _ = data  # Ignore negative
+            anchor, positive, _ = data  # Ignore negative, we only use anchor and positive
             anchor, positive = anchor.to(cuda), positive.to(cuda)
 
-            # Forward pass
+            # Forward pass (only anchor and positive)
             anchor_out, positive_out = model(anchor, positive)  # Only anchor and positive outputs
 
             # Compute distances
@@ -44,11 +58,16 @@ def test_triplet_model(model, dataloader):
     return d_ap
 
 cuda = torch.device("cuda:0")
-model = eval("models." + args.model_name)(mask=args.mask).to(cuda)
-state_dict = torch.load(args.model_infile)
-model.load_state_dict(state_dict, strict=False)
 
-model.eval()
+# Load the original model and wrap it in SimplifiedTripletLeNet
+original_model = eval("models." + args.model_name)(mask=args.mask).to(cuda)
+simplified_model = SimplifiedTripletLeNet(original_model)
+
+# Load the model state dict
+state_dict = torch.load(args.model_infile)
+simplified_model.load_state_dict(state_dict, strict=False)
+
+simplified_model.eval()
 
 # Load train/validation dataset
 TripletDataset = GroupedHiCDataset([
@@ -60,7 +79,7 @@ test_sampler = SequentialSampler(TripletDataset)
 dataloader = DataLoader(TripletDataset, batch_size=100, sampler=test_sampler)
 
 # train/validation set
-d_ap = test_triplet_model(model, dataloader)
+d_ap = test_triplet_model(simplified_model, dataloader)
 
 # Find threshold for separation
 mx = max(d_ap)
@@ -88,7 +107,7 @@ test_sampler = SequentialSampler(TripletDataset)
 dataloader = DataLoader(TripletDataset, batch_size=100, sampler=test_sampler)
 
 # Test set
-d_ap = test_triplet_model(model, dataloader)
+d_ap = test_triplet_model(simplified_model, dataloader)
 
 # Calculate rate based on the intersection threshold
 global_rate = np.mean(d_ap < intersect)
