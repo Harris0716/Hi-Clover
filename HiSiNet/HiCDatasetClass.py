@@ -200,8 +200,8 @@ class HiCDatasetDec(HiCDataset):
         self.positions.append(start_pos)
 
 
-class GroupedHiCDataset(HiCDataset):
-    """Grouping multiple Hi-C datasets together"""
+class GroupedTripletHiCDataset(HiCDataset):
+    """Grouping multiple Hi-C datasets together (triplet Datasets)"""
 
     def __init__(self, list_of_HiCDatasets):
         # self.reference = reference
@@ -237,24 +237,26 @@ class GroupedHiCDataset(HiCDataset):
     def __getitem__(self, idx):
         # Will return either pair or triplet depending on input data type
         return self.data[idx]
-# class GroupedHiCDataset(HiCDataset):
-#     """Grouping multiple Hi-C datasets together"""
-#
-#     def __init__(self, list_of_HiCDatasets):
-#         # self.reference = reference
-#         self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
-#         if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")  # stop running
-#         self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
-#         for dataset in list_of_HiCDatasets: self.add_data(dataset)
-#
-#     def add_data(self, dataset):
-#         if not isinstance(dataset, HiCDataset): return print("file not HiCDataset")
-#         # if self.reference != dataset.reference: return print("incorrect reference")
-#         if self.resolution != dataset.resolution: return print("incorrect resolution")
-#         if self.data_res != dataset.data_res: return print("data resolutions do not match")
-#         self.data = self.data + dataset.data
-#         self.metadata.append(dataset.metadata)
-#         self.starts.append(len(self.data))
+    
+
+class GroupedHiCDataset(HiCDataset):
+    """Grouping multiple Hi-C datasets together"""
+
+    def __init__(self, list_of_HiCDatasets):
+        # self.reference = reference
+        self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
+        if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")  # stop running
+        self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
+        for dataset in list_of_HiCDatasets: self.add_data(dataset)
+
+    def add_data(self, dataset):
+        if not isinstance(dataset, HiCDataset): return print("file not HiCDataset")
+        # if self.reference != dataset.reference: return print("incorrect reference")
+        if self.resolution != dataset.resolution: return print("incorrect resolution")
+        if self.data_res != dataset.data_res: return print("data resolutions do not match")
+        self.data = self.data + dataset.data
+        self.metadata.append(dataset.metadata)
+        self.starts.append(len(self.data))
 
 
 class SiameseHiCDataset(HiCDataset):

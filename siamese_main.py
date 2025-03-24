@@ -5,7 +5,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.nn as nn
-from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedHiCDataset
+from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
 import torch
 from torch_plus.loss import TripletLoss
@@ -72,7 +72,7 @@ dataloader = DataLoader(Triplet,
                        pin_memory=True)
 
 # Create validation dataset and dataloader
-Triplet_validation = GroupedHiCDataset(
+Triplet_validation = GroupedTripletHiCDataset(
     [TripletHiCDataset([HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["validation"]],
                        reference=reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs])
 test_sampler = SequentialSampler(Triplet_validation)
