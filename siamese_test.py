@@ -60,7 +60,12 @@ def test_triplet_by_siamese(model, dataloader):
 
 cuda = torch.device("cuda:0")
 model = eval("models."+ args.model_name)(mask=args.mask).to(cuda)
-model.load_state_dict(torch.load(args.model_infile))
+state_dict = torch.load(args.model_infile)
+new_state_dict = {}
+for key, value in state_dict.items():
+    new_key = key.replace("module.", "")  # 移除 'module.' 前綴
+    new_state_dict[new_key] = value
+model.load_state_dict(new_state_dict)
 model.eval()
 
 # Load train/validation dataset
