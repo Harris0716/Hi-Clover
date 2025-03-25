@@ -103,7 +103,7 @@ test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler = test_sampler)
 
 # Test the model
-distances, labels = test_model(model, dataloader)
+distances, labels = test_triplet_by_siamese(model, dataloader)
 
 global_rate = sum(((distances<intersect)==(labels==0)) )/len(distances)
 TR_rate =  sum((distances<intersect) & (labels==0))/sum(labels==0)
