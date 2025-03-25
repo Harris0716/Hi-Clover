@@ -60,7 +60,7 @@ def test_triplet_by_siamese(model, dataloader):
 
 cuda = torch.device("cuda:0")
 model = eval("models."+ args.model_name)(mask=args.mask).to(cuda)
-state_dict = torch.load(args.model_infile)
+state_dict = torch.load(args.model_infile, weights_only=True, map_location=cuda)
 new_state_dict = {}
 for key, value in state_dict.items():
     new_key = key.replace("module.", "")  # 移除 'module.' 前綴
