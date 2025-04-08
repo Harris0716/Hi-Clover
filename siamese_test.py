@@ -117,6 +117,7 @@ rng = np.arange(mn, mx, (mx-mn)/200)
 
 a = plt.hist(distances[(labels==0)],bins=rng, density=True, label='replicates', alpha=0.5, color='#108690')
 b = plt.hist(distances[(labels==1)],bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
+intersect = a[1][np.argwhere(np.diff(np.sign(a[0]-b[0])))[0]]
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=5), fontsize=10)
 plt.title("distance of test from " + args.model_infile.split("/")[-1] +" on: "+ ", ".join(args.data_inputs))
