@@ -143,3 +143,19 @@ separation_index_sum = np.sum(overlap * bin_widths)
 
 print("Separation Index (Simpson): {:.4f}".format(separation_index_simps))
 print("Separation Index (Sum)    : {:.4f}".format(separation_index_sum))
+
+
+
+# mean performance
+replicate_correct = np.sum((distances < intersect) & (labels == 0))
+condition_correct = np.sum((distances >= intersect) & (labels == 1))
+replicate_total = np.sum(labels == 0)
+condition_total = np.sum(labels == 1)
+
+replicate_rate = replicate_correct / replicate_total
+condition_rate = condition_correct / condition_total
+mean_performance = (replicate_rate + condition_rate) / 2
+
+print("Replicate rate: {:.4f}".format(replicate_rate))
+print("Condition rate: {:.4f}".format(condition_rate))
+print("Mean Performance: {:.4f}".format(mean_performance))
