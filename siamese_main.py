@@ -55,7 +55,7 @@ with open(args.json_file) as json_file:
 torch.manual_seed(args.seed)
 
 # Initialize dataset
-Triplet = GroupedHiCDataset([
+Triplet = GroupedTripletHiCDataset([
     TripletHiCDataset(
         [HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["training"]],
         reference=reference_genomes[dataset[data_name]["reference"]])

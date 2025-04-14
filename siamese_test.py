@@ -159,3 +159,4 @@ mean_performance = (replicate_rate + condition_rate) / 2
 print("Replicate rate: {:.4f}".format(replicate_rate))
 print("Condition rate: {:.4f}".format(condition_rate))
 print("Mean Performance: {:.4f}".format(mean_performance))
+
