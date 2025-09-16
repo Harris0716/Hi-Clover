@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import argparse
 from HiSiNet.reference_dictionaries import reference_genomes
 import json
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from numpy import minimum
 
 parser = argparse.ArgumentParser(description='Triplet network testing module')
@@ -88,7 +88,7 @@ bin_widths = np.diff(bin_edges)
 overlap = minimum(rep_density, cond_density)
 
 # Separation Index 
-separation_index_simps = 1 - simps(overlap, bin_centers)
+separation_index_simps = 1 - simpson(overlap, bin_centers)
 separation_index_sum = 1 - np.sum(overlap * bin_widths)
 
 print("Separation Index (Simpson): {:.4f}".format(separation_index_simps))
@@ -154,7 +154,7 @@ bin_widths = np.diff(bin_edges)
 overlap = minimum(rep_density, cond_density)
 
 # Separation Index 
-separation_index_simps = 1 - simps(overlap, bin_centers)
+separation_index_simps = 1 - simpson(overlap, bin_centers)
 separation_index_sum = 1 - np.sum(overlap * bin_widths)
 
 print("Separation Index (Simpson): {:.4f}".format(separation_index_simps))
