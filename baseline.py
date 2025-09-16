@@ -13,10 +13,10 @@ from scipy.integrate import simps
 from numpy import minimum
 
 parser = argparse.ArgumentParser(description='Triplet network testing module')
-parser.add_argument('model_name', type=str, help='a string indicating a model from models')
+# parser.add_argument('model_name', type=str, help='a string indicating a model from models')
 parser.add_argument('json_file', type=str, help='a file location for the json dictionary containing file paths')
-parser.add_argument('model_infile', type=str, help='a string indicating the model location file')
-parser.add_argument('--mask', type=bool, default=False, help='an argument specifying if the diagonal should be masked')
+# parser.add_argument('model_infile', type=str, help='a string indicating the model location file')
+# parser.add_argument('--mask', type=bool, default=False, help='an argument specifying if the diagonal should be masked')
 parser.add_argument("data_inputs", nargs='+', help="keys from dictionary containing paths for training and validation sets.")
 
 args = parser.parse_args()
