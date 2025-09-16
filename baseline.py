@@ -32,7 +32,7 @@ def test_triplet_by_siamese(dataloader):
     with torch.no_grad():
         for _, data in enumerate(dataloader):
             input1, input2, label = data
-            input1, input2 = input1.to(cuda), input2.to(cuda)
+            # input1, input2 = input1.to(cuda), input2.to(cuda)
 
             input1 = input1.view(input1.size(0), -1)
             input2 = input2.view(input2.size(0), -1)
