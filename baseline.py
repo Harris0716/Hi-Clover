@@ -25,7 +25,7 @@ with open(args.json_file) as json_file:
     dataset = json.load(json_file)
 
 # 
-def test_triplet_by_siamese(model, dataloader):
+def test_triplet_by_siamese(dataloader):
     distances = np.array([])
     labels = np.array([])
 
@@ -61,7 +61,7 @@ test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler = test_sampler)
 
 # train/validation set
-distances, labels = test_triplet_by_siamese(model, dataloader)
+distances, labels = test_triplet_by_siamese(dataloader)
 
 
 mx = max(distances)
@@ -74,10 +74,10 @@ intersect = a[1][np.argwhere(np.diff(np.sign(a[0]-b[0])))[0]]
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=5), fontsize=10)
 plt.legend()
-plt.title("Distance of Train/Val from "+ args.model_infile.split("/")[-1] +" on: "+ ", ".join(args.data_inputs))
+# plt.title("Distance of Train/Val from "+ args.model_infile.split("/")[-1] +" on: "+ ", ".join(args.data_inputs))
 plt.ylabel("Density")
 plt.xlabel("Euclidean Distance of Representation")
-plt.savefig(args.model_infile.split(".ckpt")[0]+"_train_distribution.pdf")
+plt.savefig("baseline_train_distribution.pdf")
 plt.close()
 
 print('----train/val-----')
@@ -119,7 +119,7 @@ test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler = test_sampler)
 
 # Test the model
-distances, labels = test_triplet_by_siamese(model, dataloader)
+distances, labels = test_triplet_by_siamese(dataloader)
 mx = max(distances)
 mn = min(distances[distances>0])
 rng = np.arange(mn, mx, (mx-mn)/200)
@@ -129,11 +129,11 @@ b = plt.hist(distances[(labels==1)],bins=rng, density=True, label='conditions', 
 intersect = a[1][np.argwhere(np.diff(np.sign(a[0]-b[0])))[0]]
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=5), fontsize=10)
-plt.title("Distance of Test from " + args.model_infile.split("/")[-1] +" on: "+ ", ".join(args.data_inputs))
+# plt.title("Distance of Test from " + args.model_infile.split("/")[-1] +" on: "+ ", ".join(args.data_inputs))
 plt.ylabel("Density")
 plt.xlabel("Euclidean Distance of Representation")
 plt.legend()
-plt.savefig(args.model_infile.split(".ckpt")[0]+"_test_distribution.pdf")
+plt.savefig("baseline_test_distribution.pdf")
 plt.close()
 
 print('----test-----')
