@@ -45,15 +45,15 @@ def test_triplet_by_siamese(model, dataloader):
 
     return distances, labels
 
-cuda = torch.device("cuda:0")
-model = eval("models."+ args.model_name)(mask=args.mask).to(cuda)
-state_dict = torch.load(args.model_infile, weights_only=True, map_location=cuda)
-new_state_dict = {}
-for key, value in state_dict.items():
-    new_key = key.replace("module.", "")  # remove 'module.' prefix
-    new_state_dict[new_key] = value
-model.load_state_dict(new_state_dict)
-model.eval()
+# cuda = torch.device("cuda:0")
+# model = eval("models."+ args.model_name)(mask=args.mask).to(cuda)
+# state_dict = torch.load(args.model_infile, weights_only=True, map_location=cuda)
+# new_state_dict = {}
+# for key, value in state_dict.items():
+#     new_key = key.replace("module.", "")  # remove 'module.' prefix
+#     new_state_dict[new_key] = value
+# model.load_state_dict(new_state_dict)
+# model.eval()
 
 # Load train/validation dataset
 Siamese = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["training"]+ dataset[data_name]["validation"])],reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
