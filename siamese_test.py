@@ -39,25 +39,6 @@ def test_triplet_by_siamese(model, dataloader):
             label = label.type(torch.FloatTensor)
             labels  = np.concatenate((labels, label.cpu().detach().numpy()))
 
-
-        # for _, data in enumerate(dataloader):
-        #     anchor, positive, negative = data
-        #     anchor, positive, negative = anchor.to(cuda), positive.to(cuda), negative.to(cuda)
-
-        #     # Forward pass
-        #     anchor_out, positive_out, negative_out = model(anchor, positive, negative)
-
-        #     # Compute distances
-        #     d_ap = F.pairwise_distance(anchor_out, positive_out)
-        #     d_an = F.pairwise_distance(anchor_out, negative_out)
-
-        #     d_ap_list.append(d_ap.cpu().numpy())
-        #     d_an_list.append(d_an.cpu().numpy())
-
-    # Combine results into arrays
-    # d_ap = np.concatenate(d_ap_list)
-    # d_an = np.concatenate(d_an_list)
-
     return distances, labels
 
 cuda = torch.device("cuda:0")
@@ -65,7 +46,7 @@ model = eval("models."+ args.model_name)(mask=args.mask).to(cuda)
 state_dict = torch.load(args.model_infile, weights_only=True, map_location=cuda)
 new_state_dict = {}
 for key, value in state_dict.items():
-    new_key = key.replace("module.", "")  # 移除 'module.' 前綴
+    new_key = key.replace("module.", "")  # remove 'module.' prefix
     new_state_dict[new_key] = value
 model.load_state_dict(new_state_dict)
 model.eval()
@@ -128,10 +109,6 @@ mean_performance = (replicate_rate + condition_rate) / 2
 print("Replicate rate: {:.4f}".format(replicate_rate))
 print("Condition rate: {:.4f}".format(condition_rate))
 print("Mean Performance: {:.4f}".format(mean_performance))
-
-
-
-
 
 #dataset test
 Siamese = GroupedHiCDataset([ SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["test"])],
