@@ -74,7 +74,7 @@ intersect = a[1][np.argwhere(np.diff(np.sign(a[0]-b[0])))[0]]
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=5), fontsize=10)
 plt.legend()
-# plt.title("Distance of Train/Val from "+ args.model_infile.split("/")[-1] +" on: "+ ", ".join(args.data_inputs))
+plt.title("Distance of Train/Val from baseine(Euclidean)")
 plt.ylabel("Density")
 plt.xlabel("Euclidean Distance of Representation")
 plt.savefig("baseline_train_distribution.pdf")
@@ -129,7 +129,7 @@ b = plt.hist(distances[(labels==1)],bins=rng, density=True, label='conditions', 
 intersect = a[1][np.argwhere(np.diff(np.sign(a[0]-b[0])))[0]]
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=5), fontsize=10)
-# plt.title("Distance of Test from " + args.model_infile.split("/")[-1] +" on: "+ ", ".join(args.data_inputs))
+plt.title("Distance of Test from baseline(Euclidean)")
 plt.ylabel("Density")
 plt.xlabel("Euclidean Distance of Representation")
 plt.legend()
