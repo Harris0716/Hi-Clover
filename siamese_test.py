@@ -88,7 +88,7 @@ bin_widths = np.diff(bin_edges)
 overlap = minimum(rep_density, cond_density)
 
 # Separation Index 
-separation_index_simps = 1 - simpson(overlap, bin_centers)
+separation_index_simps = 1 - simpson(overlap, x = bin_centers)
 separation_index_sum = 1 - np.sum(overlap * bin_widths)
 
 print("Separation Index (Simpson): {:.4f}".format(separation_index_simps))
@@ -154,7 +154,7 @@ bin_widths = np.diff(bin_edges)
 overlap = minimum(rep_density, cond_density)
 
 # Separation Index 
-separation_index_simps = 1 - simpson(overlap, bin_centers)
+separation_index_simps = 1 - simpson(overlap, x = bin_centers)
 separation_index_sum = 1 - np.sum(overlap * bin_widths)
 
 print("Separation Index (Simpson): {:.4f}".format(separation_index_simps))
