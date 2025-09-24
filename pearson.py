@@ -84,7 +84,7 @@ dataloader = DataLoader(
     Siamese,
     batch_size=10,
     sampler=SequentialSampler(Siamese),
-    num_workers=1  # 使用 1 個子進程讀取資料
+    num_workers=0  # 使用 0 個子進程讀取資料
 )
 
 distances, labels = test_triplet_by_siamese(dataloader)
