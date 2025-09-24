@@ -7,6 +7,7 @@ from scipy.integrate import simpson
 from numpy import minimum
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, GroupedHiCDataset, SiameseHiCDataset
 from HiSiNet.reference_dictionaries import reference_genomes
+import numpy as np
 
 parser = argparse.ArgumentParser(description='Triplet network testing module (GPU Pearson correlation distance)')
 parser.add_argument('json_file', type=str, help='JSON file containing dataset paths')
