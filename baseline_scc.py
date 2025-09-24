@@ -1,5 +1,5 @@
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, SequentialSampler
+from torch.utils.data import DataLoader, SequentialSampler
 import torch
 import matplotlib.pyplot as plt
 import argparse
@@ -8,7 +8,7 @@ from scipy.integrate import simpson
 from numpy import minimum
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, GroupedHiCDataset, SiameseHiCDataset
 from HiSiNet.reference_dictionaries import reference_genomes
-from hicrep import hicrepSCC  # HiRep SCC
+from hicrep import hicrepSCC  # 正確匯入
 
 parser = argparse.ArgumentParser(description='Triplet network testing module (HiRep SCC version)')
 parser.add_argument('json_file', type=str, help='a file location for the json dictionary containing file paths')
@@ -19,13 +19,13 @@ with open(args.json_file) as json_file:
     dataset = json.load(json_file)
 
 
-# ===== HiRep SCC function =====
-def hicrep_scc(mat1, mat2, h=1, dBPMax=2000000, resolution=10000):
+# ===== HiRep SCC wrapper =====
+def hicrep_scc(mat1, mat2, h=1, dBPMax=2000000, bDownSample=False):
     """
     計算兩個 Hi-C contact maps 的 SCC
     mat1, mat2: numpy 2D contact maps
     """
-    return hicrepSCC(mat1, mat2, h=h, dBPMax=dBPMax, resolution=resolution)
+    return hicrepSCC(mat1, mat2, h, dBPMax, bDownSample)
 
 
 # ===== Testing function =====
@@ -40,8 +40,8 @@ def test_triplet_by_siamese(dataloader):
 
         batch_scores = []
         for m1, m2 in zip(input1, input2):
-            # 假設 m1, m2 是 contact matrix
-            if m1.ndim == 1:  # 如果 flatten，要 reshape
+            # 如果 flatten，需要 reshape 回矩陣
+            if m1.ndim == 1:
                 side = int(np.sqrt(len(m1)))
                 m1 = m1.reshape(side, side)
                 m2 = m2.reshape(side, side)
@@ -62,7 +62,7 @@ Siamese = GroupedHiCDataset([SiameseHiCDataset(
     reference=reference_genomes[dataset[data_name]["reference"]]
 ) for data_name in args.data_inputs])
 test_sampler = SequentialSampler(Siamese)
-dataloader = DataLoader(Siamese, batch_size=10, sampler=test_sampler)  # 減少 batch_size，避免記憶體爆掉
+dataloader = DataLoader(Siamese, batch_size=10, sampler=test_sampler)
 
 distances, labels = test_triplet_by_siamese(dataloader)
 
