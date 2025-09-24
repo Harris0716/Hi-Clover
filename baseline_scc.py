@@ -8,7 +8,7 @@ from scipy.integrate import simpson
 from numpy import minimum
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, GroupedHiCDataset, SiameseHiCDataset
 from HiSiNet.reference_dictionaries import reference_genomes
-from hicrep import scc  # HiRep SCC
+from hicrep import hicrepSCC  # HiRep SCC
 
 parser = argparse.ArgumentParser(description='Triplet network testing module (HiRep SCC version)')
 parser.add_argument('json_file', type=str, help='a file location for the json dictionary containing file paths')
@@ -25,7 +25,7 @@ def hicrep_scc(mat1, mat2, h=1, dBPMax=2000000, resolution=10000):
     計算兩個 Hi-C contact maps 的 SCC
     mat1, mat2: numpy 2D contact maps
     """
-    return scc(mat1, mat2, h=h, dBPMax=dBPMax, resolution=resolution)
+    return hicrepSCC(mat1, mat2, h=h, dBPMax=dBPMax, resolution=resolution)
 
 
 # ===== Testing function =====
