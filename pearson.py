@@ -10,7 +10,7 @@ from HiSiNet.HiCDatasetClass import HiCDatasetDec, GroupedHiCDataset, SiameseHiC
 from HiSiNet.reference_dictionaries import reference_genomes
 from scipy.stats import pearsonr
 
-parser = argparse.ArgumentParser(description='Triplet network testing module (Pearson SCC approx version)')
+parser = argparse.ArgumentParser(description='Triplet network testing module (Pearson correlation distance)')
 parser.add_argument('json_file', type=str, help='JSON file containing dataset paths')
 parser.add_argument("data_inputs", nargs='+', help="keys from JSON for datasets to test")
 args = parser.parse_args()
@@ -19,13 +19,13 @@ with open(args.json_file) as json_file:
     dataset = json.load(json_file)
 
 
-# ===== Pearson correlation SCC approximation =====
-def pearson_scc(mat1, mat2):
-    """Flatten matrices and compute Pearson correlation as SCC approximation"""
+# ===== Pearson correlation distance =====
+def pearson_distance(mat1, mat2):
+    """Flatten matrices and compute Pearson correlation distance"""
     m1 = mat1.flatten()
     m2 = mat2.flatten()
     corr, _ = pearsonr(m1, m2)
-    return corr
+    return 1 - corr  # distance: smaller means more similar
 
 
 # ===== Testing function =====
@@ -40,14 +40,12 @@ def test_triplet_by_siamese(dataloader):
 
         batch_scores = []
         for m1, m2 in zip(input1, input2):
-            # flatten 但保留矩陣形式
             if m1.ndim == 1:
                 side = int(np.sqrt(len(m1)))
                 m1 = m1.reshape(side, side)
                 m2 = m2.reshape(side, side)
 
-            scc_val = pearson_scc(m1, m2)
-            dist = 1 - scc_val  # 越相似 → 距離越小
+            dist = pearson_distance(m1, m2)
             batch_scores.append(dist)
 
         distances = np.concatenate((distances, np.array(batch_scores)))
@@ -89,10 +87,10 @@ intersect = a[1][np.argwhere(np.diff(np.sign(a[0] - b[0])))[0]]
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=0.1), fontsize=8)
 plt.legend()
-plt.title("Distance of Train/Val from Pearson SCC approx")
+plt.title("Distance of Train/Val (1 - Pearson correlation)")
 plt.ylabel("Density")
-plt.xlabel("1 - SCC Distance")
-plt.savefig("scc_train_distribution.pdf")
+plt.xlabel("Distance")
+plt.savefig("train_distribution.pdf")
 plt.close()
 
 print('----train/val-----')
@@ -139,11 +137,11 @@ b = plt.hist(distances[(labels == 1)], bins=rng, density=True, label='conditions
 intersect = a[1][np.argwhere(np.diff(np.sign(a[0] - b[0])))[0]]
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=0.1), fontsize=8)
-plt.title("Distance of Test from Pearson SCC approx")
+plt.title("Distance of Test (1 - Pearson correlation)")
 plt.ylabel("Density")
-plt.xlabel("1 - SCC Distance")
+plt.xlabel("Distance")
 plt.legend()
-plt.savefig("scc_test_distribution.pdf")
+plt.savefig("test_distribution.pdf")
 plt.close()
 
 print('----test-----')
