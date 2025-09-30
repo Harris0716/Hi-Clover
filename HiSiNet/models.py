@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 import numpy as np
+import torchvision.models as models
 
 #learn f(x) such that x is the wt and f(x) is the CTCFKO - then i have to clean and label in a different way.
 #or x is the CTCFKO and f(x) is the DKO
@@ -41,6 +42,60 @@ class TripletNet(nn.Module):
         positive_out = self.forward_one(positive)
         negative_out = self.forward_one(negative)
         return anchor_out, positive_out, negative_out
+
+# resnet
+class TripletResNet(nn.Module):
+    def __init__(self, mask=False, embedding_dim=128, backbone="resnet18"):
+        super(TripletResNet, self).__init__()
+
+        # optional masking
+        if mask:
+            mask = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
+            self.mask = nn.Parameter(torch.tensor([mask], dtype=torch.int32), requires_grad=False)
+
+        # load ResNet backbone
+        if backbone == "resnet18":
+            base_model = models.resnet18(pretrained=False)
+        elif backbone == "resnet34":
+            base_model = models.resnet34(pretrained=False)
+        else:
+            raise ValueError(f"Backbone {backbone} not supported")
+
+        # modify first conv layer to accept 1-channel Hi-C input (instead of 3-channel RGB)
+        base_model.conv1 = nn.Conv2d(
+            1, 64, kernel_size=7, stride=2, padding=3, bias=False
+        )
+
+        # remove classifier head, keep feature extractor
+        modules = list(base_model.children())[:-1]  # remove fc layer
+        self.feature_extractor = nn.Sequential(*modules)
+
+        # add projection head to get embeddings of size embedding_dim
+        self.embedding_layer = nn.Linear(base_model.fc.in_features, embedding_dim)
+
+    def mask_data(self, x):
+        if hasattr(self, "mask"):
+            x = torch.mul(self.mask, x)
+        return x
+
+    def forward_one(self, x):
+        x = self.feature_extractor(x)   # [batch, 512, 1, 1] for resnet18
+        x = torch.flatten(x, 1)
+        x = self.embedding_layer(x)     # [batch, embedding_dim]
+        x = nn.functional.normalize(x, p=2, dim=1)  # L2 normalize embeddings
+        return x
+
+    def forward(self, anchor, positive, negative):
+        anchor = self.mask_data(anchor)
+        positive = self.mask_data(positive)
+        negative = self.mask_data(negative)
+
+        anchor_out = self.forward_one(anchor)
+        positive_out = self.forward_one(positive)
+        negative_out = self.forward_one(negative)
+
+        return anchor_out, positive_out, negative_out
+
 
 
 class TripletLeNet(TripletNet):
