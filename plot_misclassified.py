@@ -59,6 +59,7 @@ def plot_misclassified_pairs(distances, labels, intersect, Siamese, num_samples=
         input1, input2, label = Siamese[idx]
         mat1 = input1.squeeze().cpu().numpy() if isinstance(input1, torch.Tensor) else np.array(input1)
         mat2 = input2.squeeze().cpu().numpy() if isinstance(input2, torch.Tensor) else np.array(input2)
+        label_name = "replicate" if label == 0 else "condition"
 
         plt.figure(figsize=(6, 3))
         plt.subplot(1, 2, 1)
@@ -68,7 +69,7 @@ def plot_misclassified_pairs(distances, labels, intersect, Siamese, num_samples=
         plt.subplot(1, 2, 2)
         plt.imshow(mat2, cmap="Reds", vmin=0, vmax=np.percentile(mat2, 99))
 
-        plt.suptitle(f"Misclassified Pair {j+1}\nDist={distances[idx]:.2f}, True={int(label)}")
+        plt.suptitle(f"Misclassified Pair {j+1}\nDist={distances[idx]:.2f}, {label_name}")
         plt.tight_layout()
         out_file = f"{out_prefix}_{j+1}.png"
         plt.savefig(out_file)
