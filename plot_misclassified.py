@@ -66,7 +66,7 @@ def plot_misclassified_pairs(distances, labels, intersect, Siamese, num_samples=
         plt.title("Matrix1")
 
         plt.subplot(1, 2, 2)
-        plt.imshow(mat2, cmap="Blues", vmin=0, vmax=np.percentile(mat2, 99))
+        plt.imshow(mat2, cmap="Reds", vmin=0, vmax=np.percentile(mat2, 99))
 
         plt.suptitle(f"Misclassified Pair {j+1}\nDist={distances[idx]:.2f}, True={int(label)}")
         plt.tight_layout()
