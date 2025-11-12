@@ -123,8 +123,8 @@ mn = min(distances[distances>0])
 rng = np.arange(mn, mx, (mx-mn)/200)
 
 # global_rate = sum(((distances<intersect)==(labels==0)) )/len(distances)
-# TR_rate =  sum((distances<intersect) & (labels==0))/sum(labels==0)
-# BC_rate = sum((distances>intersect) & (labels==1) )/sum(labels==1)
+# TR_rate =  sum((distances<intersect) & (labels==0))/sum(labels==0) #rep. rate
+# BC_rate = sum((distances>intersect) & (labels==1) )/sum(labels==1) # cond. rate
 
 # print('global rate: {:.4f}, replicate rate: {:.4f}, condition rate: {:.4f}'
 #             .format(global_rate, TR_rate, BC_rate))
