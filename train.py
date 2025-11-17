@@ -60,6 +60,8 @@ Triplet = GroupedTripletHiCDataset([
         [HiCDatasetDec.load(data_path) for data_path in dataset[data_name]["training"]],
         reference=reference_genomes[dataset[data_name]["reference"]])
     for data_name in args.data_inputs])
+
+# shuffle
 train_sampler = torch.utils.data.RandomSampler(Triplet)
 
 # Initialize CNN parameters

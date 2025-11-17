@@ -52,7 +52,9 @@ model.load_state_dict(new_state_dict)
 model.eval()
 
 # Load train/validation dataset
-Siamese = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["training"]+ dataset[data_name]["validation"])],reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
+Siamese = GroupedHiCDataset([SiameseHiCDataset(
+    [HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["training"]+ dataset[data_name]["validation"])],
+    reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
 test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler = test_sampler)
 
@@ -111,7 +113,8 @@ print("Condition rate: {:.4f}".format(condition_rate))
 print("Mean Performance: {:.4f}".format(mean_performance))
 
 #dataset test
-Siamese = GroupedHiCDataset([ SiameseHiCDataset([HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["test"])],
+Siamese = GroupedHiCDataset([ SiameseHiCDataset(
+    [HiCDatasetDec.load(data_path) for data_path in (dataset[data_name]["test"])],
              reference = reference_genomes[dataset[data_name]["reference"]]) for data_name in args.data_inputs] )
 test_sampler = SequentialSampler(Siamese)
 dataloader = DataLoader(Siamese, batch_size=100, sampler = test_sampler)
