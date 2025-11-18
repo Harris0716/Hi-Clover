@@ -174,5 +174,8 @@ summary_df = pd.DataFrame({
     "separation_index": [train_separation_index, test_separation_index]
 })
 
+# 四捨五入到小數點後4位
+summary_df = summary_df.round(4)
+
 summary_df.to_csv(summary_path, index=False)
 print(f"[Saved] {summary_path}")
