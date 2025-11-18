@@ -41,31 +41,31 @@ args = parser.parse_args()
 
 os.makedirs(args.outpath, exist_ok=True)
 
-# debug
-def debug_triplet_dataset(ds: TripletHiCDataset):
-    print("==== Triplet Dataset Summary ====")
-    print(f"Total triplets: {len(ds.data)}")
-    print(f"Total positions: {len(ds.positions)}")
-    print()
+# # debug
+# def debug_triplet_dataset(ds: TripletHiCDataset):
+#     print("==== Triplet Dataset Summary ====")
+#     print(f"Total triplets: {len(ds.data)}")
+#     print(f"Total positions: {len(ds.positions)}")
+#     print()
 
-    # Count by chromosome
-    print("Triplets per chromosome:")
-    for chrom, (start, end) in ds.chromosomes.items():
-        print(f"  {chrom}: {end - start} triplets")
+#     # Count by chromosome
+#     print("Triplets per chromosome:")
+#     for chrom, (start, end) in ds.chromosomes.items():
+#         print(f"  {chrom}: {end - start} triplets")
 
-    print("\nTriplets per label pair:")
-    label_count = {}
-    for a, b in ds.labels:
-        key = (a, b)
-        label_count[key] = label_count.get(key, 0) + 1
+#     print("\nTriplets per label pair:")
+#     label_count = {}
+#     for a, b in ds.labels:
+#         key = (a, b)
+#         label_count[key] = label_count.get(key, 0) + 1
 
-    for k, v in label_count.items():
-        print(f"  {k}: {v} triplets")
+#     for k, v in label_count.items():
+#         print(f"  {k}: {v} triplets")
 
-    print("==== End Summary ====")
+#     print("==== End Summary ====")
 
-ds = TripletHiCDataset([TAM_R1, TAM_R2, KO_R1, KO_R2])
-debug_triplet_dataset(ds)
+# ds = TripletHiCDataset([TAM_R1, TAM_R2, KO_R1, KO_R2])
+# debug_triplet_dataset(ds)
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
