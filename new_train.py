@@ -72,13 +72,14 @@ Triplet = GroupedTripletHiCDataset([
 train_sampler = torch.utils.data.RandomSampler(Triplet)
 
 batch_size, learning_rate = args.batch_size, args.learning_rate
-no_of_batches = len(Triplet) // args.batch_size
+
 dataloader = DataLoader(
     Triplet,
     batch_size=args.batch_size,
     sampler=train_sampler,
     num_workers=4,
     pin_memory=True)
+no_of_batches = len(dataloader)
 
 # Validation dataset
 Triplet_validation = GroupedTripletHiCDataset(
@@ -181,18 +182,23 @@ for epoch in range(args.epoch_training):
     # ======== NEW Early stopping with patience ========
     if epoch >= args.epoch_enforced_training:
 
-        if epoch_val_loss < best_val_loss:
-            best_val_loss = epoch_val_loss
-            patience_counter = 0
-        else:
-            patience_counter += 1
+    if epoch_val_loss < best_val_loss:
+        best_val_loss = epoch_val_loss
+        patience_counter = 0
 
-        if patience_counter >= args.patience:
-            print(f"Early stopping triggered at epoch {epoch+1}")
-            break
+        # NEW — Save best model
+        torch.save(model.state_dict(), model_save_path + '_best.ckpt')
+        print("Best model saved.")
+    else:
+        patience_counter += 1
+
+    if patience_counter >= args.patience:
+        print(f"Early stopping triggered at epoch {epoch+1}")
+        break
     # ==================================================
 
-    torch.save(model.state_dict(), model_save_path + '.ckpt')
+    # NEW — Save last model
+    torch.save(model.state_dict(), model_save_path + '_last.ckpt')
 
 print("Training completed")
 
