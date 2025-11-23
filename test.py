@@ -33,12 +33,12 @@ def test_triplet_by_siamese(model, dataloader):
         for _, data in enumerate(dataloader):
             input1, input2, label = data
             input1, input2 = input1.to(cuda), input2.to(cuda)
-            label = label.type(torch.FloatTensor).to(cuda)
+            label = label.float()
             output1, output2, _ = model(input1, input2, input2)
             predicted = F.pairwise_distance(output1, output2)
-            distances = np.concatenate((distances, predicted.cpu().detach().numpy()))
-            label = label.type(torch.FloatTensor)
-            labels = np.concatenate((labels, label.cpu().detach().numpy()))
+            distances = np.concatenate((distances, predicted.cpu().numpy()))
+
+            labels = np.concatenate((labels, label.numpy()))
 
     return distances, labels
 
@@ -69,7 +69,16 @@ rng = np.arange(mn, mx, (mx - mn) / 200)
 a = plt.hist(distances[(labels == 0)], bins=rng, density=True, label='replicates', alpha=0.5, color='#108690')
 b = plt.hist(distances[(labels == 1)], bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
 
-intersect = a[1][np.argwhere(np.diff(np.sign(a[0] - b[0])))[0]]
+# intersect
+diff = a[0] - b[0]
+idx = np.where(np.diff(np.sign(diff)))[0]
+
+# to avoid the case that there is no intersection
+if len(idx) == 0:
+    intersect = a[1][len(a[1]) // 2]
+else:
+    intersect = a[1][idx[0]]
+
 
 plt.axvline(intersect, color='k')
 plt.xticks(np.arange(0, np.ceil(mx), step=5), fontsize=10)
