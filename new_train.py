@@ -88,13 +88,13 @@ Triplet_validation = GroupedTripletHiCDataset(
      for data_name in args.data_inputs])
 
 test_sampler = SequentialSampler(Triplet_validation)
-batches_validation = len(dataloader_validation)
 dataloader_validation = DataLoader(
     Triplet_validation,
     batch_size=100,
     sampler=test_sampler,
     num_workers=4,
     pin_memory=True)
+batches_validation = len(dataloader_validation)
 
 # Model
 model = eval("models." + args.model_name)(mask=args.mask)
