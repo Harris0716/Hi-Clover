@@ -192,9 +192,9 @@ for epoch in range(args.epoch_training):
         else:
             patience_counter += 1
 
-    if patience_counter >= args.patience:
-        print(f"Early stopping triggered at epoch {epoch+1}")
-        break
+        if patience_counter >= args.patience:
+            print(f"Early stopping triggered at epoch {epoch+1}")
+            break
     # ==================================================
 
     
