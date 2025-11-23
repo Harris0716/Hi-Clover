@@ -88,7 +88,7 @@ Triplet_validation = GroupedTripletHiCDataset(
      for data_name in args.data_inputs])
 
 test_sampler = SequentialSampler(Triplet_validation)
-batches_validation = np.ceil(len(Triplet_validation) / 100)
+batches_validation = len(dataloader_validation)
 dataloader_validation = DataLoader(
     Triplet_validation,
     batch_size=100,
@@ -107,7 +107,8 @@ model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_
 # Save initial model
 torch.save(model.state_dict(), model_save_path + '.ckpt')
 
-criterion = TripletLoss(margin=args.margin)
+# reduction='mean' means the loss is averaged over the batch
+criterion = TripletLoss(margin=args.margin, reduction='mean')
 optimizer = optim.Adagrad(model.parameters())
 
 # Loss history
