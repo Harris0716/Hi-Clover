@@ -97,7 +97,7 @@ class TripletResNet(nn.Module):
         return anchor_out, positive_out, negative_out
 
 
-
+# 參數的權重參考SLeNet
 class TripletLeNet(TripletNet):
     def __init__(self, *args, **kwargs):
         super(TripletLeNet, self).__init__(*args, **kwargs)
