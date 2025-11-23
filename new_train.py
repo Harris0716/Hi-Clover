@@ -106,7 +106,7 @@ model = model.to(device)
 model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(args.seed)
 
 # Save initial model
-# torch.save(model.state_dict(), model_save_path + '.ckpt')
+# torch.save(model.state_dict(), model_save_path + f'{args.margin:.1f}.ckpt')
 
 criterion = TripletLoss(margin=args.margin)
 optimizer = optim.Adagrad(model.parameters())
@@ -186,7 +186,7 @@ for epoch in range(args.epoch_training):
             patience_counter = 0
 
             # NEW — Save best model
-            torch.save(model.state_dict(), model_save_path + '_best.ckpt')
+            torch.save(model.state_dict(), model_save_path + f'{args.margin:.1f}_best.ckpt')
             print("Best model saved.")
         else:
             patience_counter += 1
@@ -198,7 +198,7 @@ for epoch in range(args.epoch_training):
 
     
 # Save last model
-torch.save(model.state_dict(), model_save_path + '_last.ckpt')
+torch.save(model.state_dict(), model_save_path + f'{args.margin:.1f}_last.ckpt')
 print("Training completed")
 
 # Plot loss curve
