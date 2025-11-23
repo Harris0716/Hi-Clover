@@ -13,9 +13,8 @@ import argparse
 from HiSiNet.reference_dictionaries import reference_genomes
 import json
 import os
-
-# ADDED
 import matplotlib.pyplot as plt
+import time 
 
 
 parser = argparse.ArgumentParser(description='Triplet network')
@@ -31,7 +30,6 @@ parser.add_argument('--epoch_training',  type=int, default=30,
                     help='max number of epochs')
 parser.add_argument('--epoch_enforced_training',  type=int, default=0,
                     help='number of epochs to force training before early stopping can trigger')
-# ADDED — patience argument
 parser.add_argument('--patience', type=int, default=10,
                     help='number of epochs with no improvement before early stopping')
 parser.add_argument('--outpath',  type=str, default="outputs/",
@@ -68,7 +66,6 @@ Triplet = GroupedTripletHiCDataset([
         reference=reference_genomes[dataset[data_name]["reference"]])
     for data_name in args.data_inputs])
 
-# shuffle
 train_sampler = torch.utils.data.RandomSampler(Triplet)
 
 batch_size, learning_rate = args.batch_size, args.learning_rate
@@ -79,6 +76,7 @@ dataloader = DataLoader(
     sampler=train_sampler,
     num_workers=4,
     pin_memory=True)
+
 no_of_batches = len(dataloader)
 
 # Validation dataset
@@ -95,6 +93,7 @@ dataloader_validation = DataLoader(
     sampler=test_sampler,
     num_workers=4,
     pin_memory=True)
+
 batches_validation = len(dataloader_validation)
 
 # Model
@@ -105,24 +104,26 @@ model = model.to(device)
 
 model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(args.seed)
 
-# Save initial model
-# torch.save(model.state_dict(), model_save_path + f'{args.margin:.1f}.ckpt')
-
 criterion = TripletLoss(margin=args.margin)
 optimizer = optim.Adagrad(model.parameters())
 
-# Loss history
 train_losses = []
 val_losses = []
 
-# Early stopping state
 best_val_loss = float('inf')
 patience_counter = 0
 
 print(f"Early stopping: patience = {args.patience}, enforced epochs = {args.epoch_enforced_training}")
 
+# ====== 訓練總時間開始 ======
+total_start = time.time()
+
 # Training loop
 for epoch in range(args.epoch_training):
+
+    # ====== 每個 epoch 的時間開始 ======
+    epoch_start = time.time()
+
     model.train()
     running_loss = 0.0
     running_validation_loss = 0.0
@@ -135,7 +136,6 @@ for epoch in range(args.epoch_training):
         negative = negative.to(device)
 
         optimizer.zero_grad()
-
         anchor_out, positive_out, negative_out = model(anchor, positive, negative)
         loss = criterion(anchor_out, positive_out, negative_out)
 
@@ -145,13 +145,8 @@ for epoch in range(args.epoch_training):
         running_loss += loss.item()
 
         if (i + 1) % no_of_batches == 0:
-            print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(
-                epoch + 1,
-                args.epoch_training,
-                i + 1,
-                int(no_of_batches),
-                running_loss / no_of_batches
-            ))
+            print(f'Epoch [{epoch+1}/{args.epoch_training}], '
+                  f'Step [{i+1}/{no_of_batches}], Loss: {running_loss/no_of_batches:.4f}')
 
     epoch_train_loss = running_loss / no_of_batches
     train_losses.append(epoch_train_loss)
@@ -172,21 +167,19 @@ for epoch in range(args.epoch_training):
     epoch_val_loss = running_validation_loss / batches_validation
     val_losses.append(epoch_val_loss)
 
-    print('Epoch [{}/{}], Validation Loss: {:.4f}'.format(
-        epoch + 1,
-        args.epoch_training,
-        epoch_val_loss
-    ))
+    print(f'Epoch [{epoch+1}/{args.epoch_training}], Validation Loss: {epoch_val_loss:.4f}')
 
-    # ======== NEW Early stopping with patience ========
+    # ====== 每個 epoch 結束，印出時間 ======
+    epoch_end = time.time()
+    print(f"Epoch {epoch+1} time: {epoch_end - epoch_start:.2f} seconds")
+
+    # Early stopping
     if epoch >= args.epoch_enforced_training:
 
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
             patience_counter = 0
-
-            # NEW — Save best model
-            torch.save(model.state_dict(), model_save_path + f'{args.margin:.1f}_best.ckpt')
+            torch.save(model.state_dict(), model_save_path + f'_{args.margin:.1f}_best.ckpt')
             print("Best model saved.")
         else:
             patience_counter += 1
@@ -194,12 +187,14 @@ for epoch in range(args.epoch_training):
         if patience_counter >= args.patience:
             print(f"Early stopping triggered at epoch {epoch+1}")
             break
-    # ==================================================
 
-    
 # Save last model
-torch.save(model.state_dict(), model_save_path + f'{args.margin:.1f}_last.ckpt')
+torch.save(model.state_dict(), model_save_path + f'_{args.margin:.1f}_last.ckpt')
 print("Training completed")
+
+# ====== 訓練總時間結束 ======
+total_end = time.time()
+print(f"Total training time: {total_end - total_start:.2f} seconds")
 
 # Plot loss curve
 plt.figure(figsize=(8,6))
