@@ -21,7 +21,8 @@ class TripletNet(nn.Module):
         super(TripletNet, self).__init__()
         if mask:
             mask = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
-            self.mask = nn.Parameter(torch.tensor([mask], dtype=torch.int32), requires_grad=False)
+            self.mask = nn.Parameter(torch.from_numpy(np.array(mask)).to(torch.int32),requires_grad=False)
+
 
     def mask_data(self, x):
         if hasattr(self, "mask"):
@@ -51,7 +52,7 @@ class TripletResNet(nn.Module):
         # optional masking
         if mask:
             mask = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
-            self.mask = nn.Parameter(torch.tensor([mask], dtype=torch.int32), requires_grad=False)
+            self.mask = nn.Parameter(torch.from_numpy(np.array(mask)).to(torch.int32),requires_grad=False)
 
         # load ResNet backbone
         if backbone == "resnet18":
@@ -136,7 +137,8 @@ class SiameseNet(nn.Module):
         super(SiameseNet, self).__init__()
         if mask:
             mask = np.tril(np.ones(256), k=-3)+np.triu(np.ones(256), k=3)
-            self.mask = nn.Parameter(torch.tensor([mask], dtype=torch.int32), requires_grad = False)
+            self.mask = nn.Parameter(torch.from_numpy(np.array(mask)).to(torch.int32),requires_grad=False)
+
     def mask_data(self, x):
         if hasattr(self, "mask"): x=torch.mul(self.mask, x)
         return x
