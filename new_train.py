@@ -106,7 +106,7 @@ model = model.to(device)
 model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(args.seed)
 
 # Save initial model
-torch.save(model.state_dict(), model_save_path + '.ckpt')
+# torch.save(model.state_dict(), model_save_path + '.ckpt')
 
 criterion = TripletLoss(margin=args.margin)
 optimizer = optim.Adagrad(model.parameters())
