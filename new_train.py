@@ -194,7 +194,12 @@ print("Training completed")
 
 # ====== 訓練總時間結束 ======
 total_end = time.time()
-print(f"Total training time: {total_end - total_start:.2f} seconds")
+total_seconds = total_end - total_start
+hours = int(total_seconds // 3600)
+minutes = int((total_seconds % 3600) // 60)
+seconds = total_seconds % 60
+
+print(f"Total training time: {hours:d}h {minutes:d}m {seconds:.2f}s")
 
 # Plot loss curve
 plt.figure(figsize=(8,6))
