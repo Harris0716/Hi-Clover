@@ -182,15 +182,15 @@ for epoch in range(args.epoch_training):
     # ======== NEW Early stopping with patience ========
     if epoch >= args.epoch_enforced_training:
 
-    if epoch_val_loss < best_val_loss:
-        best_val_loss = epoch_val_loss
-        patience_counter = 0
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            patience_counter = 0
 
-        # NEW — Save best model
-        torch.save(model.state_dict(), model_save_path + '_best.ckpt')
-        print("Best model saved.")
-    else:
-        patience_counter += 1
+            # NEW — Save best model
+            torch.save(model.state_dict(), model_save_path + '_best.ckpt')
+            print("Best model saved.")
+        else:
+            patience_counter += 1
 
     if patience_counter >= args.patience:
         print(f"Early stopping triggered at epoch {epoch+1}")
