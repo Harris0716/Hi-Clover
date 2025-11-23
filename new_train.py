@@ -108,8 +108,7 @@ model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_
 # Save initial model
 torch.save(model.state_dict(), model_save_path + '.ckpt')
 
-# reduction='mean' means the loss is averaged over the batch
-criterion = TripletLoss(margin=args.margin, reduction='mean')
+criterion = TripletLoss(margin=args.margin)
 optimizer = optim.Adagrad(model.parameters())
 
 # Loss history
