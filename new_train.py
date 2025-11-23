@@ -197,9 +197,9 @@ for epoch in range(args.epoch_training):
         break
     # ==================================================
 
-    # NEW — Save last model
-    torch.save(model.state_dict(), model_save_path + '_last.ckpt')
-
+    
+# Save last model
+torch.save(model.state_dict(), model_save_path + '_last.ckpt')
 print("Training completed")
 
 # Plot loss curve
