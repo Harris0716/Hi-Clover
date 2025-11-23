@@ -65,6 +65,50 @@ class HiCDataset(Dataset):
             loadobj = unpickled.load()
         return loadobj
 
+class HiCDatasetDec(HiCDataset):
+    import hicstraw as straw
+    """Hi-C dataset loader"""
+
+    def __init__(self, *args, **kwargs):
+        super(HiCDatasetDec, self).__init__(*args, **kwargs)
+        straw_file = straw.straw(self.metadata['filename'])
+        chromosomes = list(straw_file.chromDotSizes.data.keys() - self.exclude_chroms)
+        for chromosome in chromosomes: self.get_chromosome(straw_file, chromosome)
+        self.data, self.metadata, self.positions = tuple(self.data), frozendict(self.metadata), tuple(self.positions)
+
+    def add_chromosome(self, chromosome):
+        if (chromosome in self.metadata['chromosomes'].keys()) | (
+                chromosome[3:] in self.metadata['chromosomes'].keys()): return print('chromosome already loaded')
+        self.data, self.positions = list(self.data), list(self.positions)
+        straw_file = straw.straw(self.metadata['filename'])
+        self.get_chromosome(straw_file, chromosome)
+        self.data, self.positions = tuple(self.data), tuple(self.positions)
+
+    def get_chromosome(self, straw_file, chromosome):
+        straw_matrix = straw_file.getNormalizedMatrix(chromosome, chromosome, self.metadata['norm'],
+                                                      self.metadata['type_of_bin'], self.data_res)
+        _, first, last = straw_file.chromDotSizes.figureOutEndpoints(chromosome)
+        initial = len(self.positions)
+        if 'chr' in chromosome: chromosome = chromosome[3:]
+        self.metadata['chromosomes'][chromosome] = []
+        for start_pos in range(first, last, self.split_res): self.make_matrix(straw_matrix, start_pos,
+                                                                              start_pos + self.resolution - self.
+                                                                              data_res, chromosome)
+        self.metadata['chromosomes'][chromosome] = (initial, len(self.positions))
+
+    def make_matrix(self, straw_matrix, start_pos, end_pos, chromosome):
+        xpos, ypos, vals = straw_matrix.getDataFromGenomeRegion(start_pos, end_pos, start_pos, end_pos)
+        if (len(set(xpos)) < self.pixel_size * 0.9) | (np.sum(np.isnan(vals)) > 0.5 * len(vals)): return None
+        xpos, ypos = np.array(xpos) - start_pos / straw_matrix.binsize, np.array(
+            ypos) - start_pos / straw_matrix.binsize
+        image_scp = csr_matrix((vals, (xpos, ypos)), shape=(self.pixel_size, self.pixel_size)).toarray()
+        image_scp[np.isnan(image_scp)] = 0
+        image_scp = (image_scp + np.transpose(image_scp) - np.diag(np.diag(image_scp))) / np.nanmax(image_scp)
+        image_scp = np.expand_dims(image_scp, axis=0)
+        image_scp = as_torch_tensor(image_scp, dtype=torch_float)
+        self.data.append((image_scp, self.metadata['class_id']))
+        self.positions.append(start_pos)
+
 class TripletHiCDataset(HiCDataset):
     """Triplet Hi-C datasets by genomic location."""
     def __init__(self, list_of_HiCDatasets, reference=reference_genomes["mm9"]):
@@ -123,7 +167,7 @@ class TripletHiCDataset(HiCDataset):
                         if other_class != anchor_class:
                             for negative in class_groups[other_class]:
                                 self.data.append((
-                                    anchor[0],  # anchor image
+                                    anchor[0],  # anchor imageµ
                                     positive[0],  # positive image
                                     negative[0],  # negative image
                                 ))
@@ -154,51 +198,6 @@ class TripletHiCDataset(HiCDataset):
             self.chromosomes[chrom] = (start_index, len(self.positions))
 
         self.data = tuple(self.data)
-
-class HiCDatasetDec(HiCDataset):
-    import hicstraw as straw
-    """Hi-C dataset loader"""
-
-    def __init__(self, *args, **kwargs):
-        super(HiCDatasetDec, self).__init__(*args, **kwargs)
-        straw_file = straw.straw(self.metadata['filename'])
-        chromosomes = list(straw_file.chromDotSizes.data.keys() - self.exclude_chroms)
-        for chromosome in chromosomes: self.get_chromosome(straw_file, chromosome)
-        self.data, self.metadata, self.positions = tuple(self.data), frozendict(self.metadata), tuple(self.positions)
-
-    def add_chromosome(self, chromosome):
-        if (chromosome in self.metadata['chromosomes'].keys()) | (
-                chromosome[3:] in self.metadata['chromosomes'].keys()): return print('chromosome already loaded')
-        self.data, self.positions = list(self.data), list(self.positions)
-        straw_file = straw.straw(self.metadata['filename'])
-        self.get_chromosome(straw_file, chromosome)
-        self.data, self.positions = tuple(self.data), tuple(self.positions)
-
-    def get_chromosome(self, straw_file, chromosome):
-        straw_matrix = straw_file.getNormalizedMatrix(chromosome, chromosome, self.metadata['norm'],
-                                                      self.metadata['type_of_bin'], self.data_res)
-        _, first, last = straw_file.chromDotSizes.figureOutEndpoints(chromosome)
-        initial = len(self.positions)
-        if 'chr' in chromosome: chromosome = chromosome[3:]
-        self.metadata['chromosomes'][chromosome] = []
-        for start_pos in range(first, last, self.split_res): self.make_matrix(straw_matrix, start_pos,
-                                                                              start_pos + self.resolution - self.
-                                                                              data_res, chromosome)
-        self.metadata['chromosomes'][chromosome] = (initial, len(self.positions))
-
-    def make_matrix(self, straw_matrix, start_pos, end_pos, chromosome):
-        xpos, ypos, vals = straw_matrix.getDataFromGenomeRegion(start_pos, end_pos, start_pos, end_pos)
-        if (len(set(xpos)) < self.pixel_size * 0.9) | (np.sum(np.isnan(vals)) > 0.5 * len(vals)): return None
-        xpos, ypos = np.array(xpos) - start_pos / straw_matrix.binsize, np.array(
-            ypos) - start_pos / straw_matrix.binsize
-        image_scp = csr_matrix((vals, (xpos, ypos)), shape=(self.pixel_size, self.pixel_size)).toarray()
-        image_scp[np.isnan(image_scp)] = 0
-        image_scp = (image_scp + np.transpose(image_scp) - np.diag(np.diag(image_scp))) / np.nanmax(image_scp)
-        image_scp = np.expand_dims(image_scp, axis=0)
-        image_scp = as_torch_tensor(image_scp, dtype=torch_float)
-        self.data.append((image_scp, self.metadata['class_id']))
-        self.positions.append(start_pos)
-
 
 class GroupedTripletHiCDataset(HiCDataset):
     """Grouping multiple Hi-C datasets together (triplet Datasets)"""
@@ -238,27 +237,6 @@ class GroupedTripletHiCDataset(HiCDataset):
         # Will return either pair or triplet depending on input data type
         return self.data[idx]
     
-
-class GroupedHiCDataset(HiCDataset):
-    """Grouping multiple Hi-C datasets together"""
-
-    def __init__(self, list_of_HiCDatasets):
-        # self.reference = reference
-        self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
-        if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")  # stop running
-        self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
-        for dataset in list_of_HiCDatasets: self.add_data(dataset)
-
-    def add_data(self, dataset):
-        if not isinstance(dataset, HiCDataset): return print("file not HiCDataset")
-        # if self.reference != dataset.reference: return print("incorrect reference")
-        if self.resolution != dataset.resolution: return print("incorrect resolution")
-        if self.data_res != dataset.data_res: return print("data resolutions do not match")
-        self.data = self.data + dataset.data
-        self.metadata.append(dataset.metadata)
-        self.starts.append(len(self.data))
-
-
 class SiameseHiCDataset(HiCDataset):
     """Paired Hi-C datasets by genomic location."""
 
@@ -292,6 +270,8 @@ class SiameseHiCDataset(HiCDataset):
         pass
 
     def append_data(self, curr_data, pos):
+        # curr_data 的格式為 [(image, class_id), (image, class_id), ...]
+        # 比較 class_id 相同則為0(replicate)，不同則為1(condition)
         self.data.extend(
             [(curr_data[k][0], curr_data[j][0], (self.sims[0] if curr_data[k][1] == curr_data[j][1] else self.sims[1]))
              for k in range(0, len(curr_data)) for j in range(k + 1, len(curr_data))])
@@ -317,6 +297,24 @@ class SiameseHiCDataset(HiCDataset):
             self.chromosomes[chrom] = (start_index, len(self.positions))
         self.data = tuple(self.data)
 
+class GroupedHiCDataset(HiCDataset):
+    """Grouping multiple Hi-C datasets together"""
+
+    def __init__(self, list_of_HiCDatasets):
+        # self.reference = reference
+        self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
+        if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")  # stop running
+        self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
+        for dataset in list_of_HiCDatasets: self.add_data(dataset)
+
+    def add_data(self, dataset):
+        if not isinstance(dataset, HiCDataset): return print("file not HiCDataset")
+        # if self.reference != dataset.reference: return print("incorrect reference")
+        if self.resolution != dataset.resolution: return print("incorrect resolution")
+        if self.data_res != dataset.data_res: return print("data resolutions do not match")
+        self.data = self.data + dataset.data
+        self.metadata.append(dataset.metadata)
+        self.starts.append(len(self.data))
 
 class HiCDatasetCool(HiCDataset):
     import cooler
