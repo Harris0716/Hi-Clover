@@ -105,7 +105,7 @@ model = model.to(device)
 model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(args.seed)
 
 criterion = TripletLoss(margin=args.margin)
-optimizer = optim.Adagrad(model.parameters())
+optimizer = optim.Adagrad(model.parameters(), lr=learning_rate)
 
 train_losses = []
 val_losses = []
