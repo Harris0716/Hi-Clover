@@ -74,7 +74,7 @@ dataloader = DataLoader(
     Triplet,
     batch_size=args.batch_size,
     sampler=train_sampler,
-    num_workers=0,
+    num_workers=4,
     pin_memory=True)
 
 no_of_batches = len(dataloader)
@@ -91,7 +91,7 @@ dataloader_validation = DataLoader(
     Triplet_validation,
     batch_size=100,
     sampler=test_sampler,
-    num_workers=0,
+    num_workers=4,
     pin_memory=True)
 
 batches_validation = len(dataloader_validation)
