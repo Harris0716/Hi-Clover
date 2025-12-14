@@ -41,31 +41,6 @@ args = parser.parse_args()
 
 os.makedirs(args.outpath, exist_ok=True)
 
-# # debug
-# def debug_triplet_dataset(ds: TripletHiCDataset):
-#     print("==== Triplet Dataset Summary ====")
-#     print(f"Total triplets: {len(ds.data)}")
-#     print(f"Total positions: {len(ds.positions)}")
-#     print()
-
-#     # Count by chromosome
-#     print("Triplets per chromosome:")
-#     for chrom, (start, end) in ds.chromosomes.items():
-#         print(f"  {chrom}: {end - start} triplets")
-
-#     print("\nTriplets per label pair:")
-#     label_count = {}
-#     for a, b in ds.labels:
-#         key = (a, b)
-#         label_count[key] = label_count.get(key, 0) + 1
-
-#     for k, v in label_count.items():
-#         print(f"  {k}: {v} triplets")
-
-#     print("==== End Summary ====")
-
-# ds = TripletHiCDataset([TAM_R1, TAM_R2, KO_R1, KO_R2])
-# debug_triplet_dataset(ds)
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -124,7 +99,7 @@ torch.save(model.state_dict(), model_save_path + '.ckpt')
 
 # Initialize loss function and optimizer
 criterion = TripletLoss(margin=args.margin)
-optimizer = optim.Adagrad(model.parameters())
+optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
 
 # Training loop
 prev_validation_loss = float('inf')  # Initialize validation loss for early stopping
