@@ -40,6 +40,8 @@ parser.add_argument('--mask',  type=bool, default=False,
                     help='mask diagonal')
 parser.add_argument('--margin',  type=float, default=1.0,
                     help='margin for triplet loss')
+parser.add_argument('--weight_decay', type=float, default=1e-4,
+                    help='weight decay for AdamW optimizer')
 parser.add_argument("data_inputs", nargs='+', help="keys from dictionary containing paths for training and validation sets.")
 
 args = parser.parse_args()
@@ -105,7 +107,8 @@ model = model.to(device)
 model_save_path = args.outpath + args.model_name + '_' + str(learning_rate) + '_' + str(batch_size) + '_' + str(args.seed)
 
 criterion = TripletLoss(margin=args.margin)
-optimizer = optim.Adam(model.parameters(), lr=args.learning_rate) 
+optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=args.weight_decay)
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_training, eta_min=1e-6)
 
 train_losses = []
 val_losses = []
@@ -114,14 +117,16 @@ best_val_loss = float('inf')
 patience_counter = 0
 
 print(f"Early stopping: patience = {args.patience}, enforced epochs = {args.epoch_enforced_training}")
+print(f"Optimizer: AdamW, Weight Decay: {args.weight_decay}")
+print(f"Scheduler: CosineAnnealingLR, T_max: {args.epoch_training}")
 
-# ====== training total time starts ======
+
 total_start = time.time()
 
-# Training loop
+
 for epoch in range(args.epoch_training):
 
-    # ====== each epoch starts, print time ======
+   
     epoch_start = time.time()
 
     model.train()
@@ -169,7 +174,13 @@ for epoch in range(args.epoch_training):
 
     print(f'Epoch [{epoch+1}/{args.epoch_training}], Validation Loss: {epoch_val_loss:.4f}')
 
-    # ====== each epoch ends, print time ======
+    scheduler.step()
+    
+    # 印出當前 LR 確認運作正常
+    current_lr = optimizer.param_groups[0]['lr']
+    print(f"Epoch {epoch+1} LR: {current_lr:.8f}")
+
+    # ====== 每個 epoch 結束，印出時間 ======
     epoch_end = time.time()
     print(f"Epoch {epoch+1} time: {epoch_end - epoch_start:.2f} seconds")
 
@@ -192,7 +203,7 @@ for epoch in range(args.epoch_training):
 torch.save(model.state_dict(), model_save_path + f'_{args.margin:.1f}_last.ckpt')
 print("Training completed")
 
-# ====== training time ends ======
+# ====== 訓練總時間結束 ======
 total_end = time.time()
 total_seconds = total_end - total_start
 hours = int(total_seconds // 3600)

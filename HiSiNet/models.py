@@ -16,13 +16,16 @@ import torchvision.models as models
 #     def forward(self, x1, x2):
 #         return self.net(x1-x2)
 
+import torch
+import torch.nn as nn
+import numpy as np
+
 class TripletNet(nn.Module):
     def __init__(self, mask=False):
         super(TripletNet, self).__init__()
         if mask:
             mask = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
-            self.mask = nn.Parameter(torch.from_numpy(np.array(mask)).to(torch.int32),requires_grad=False)
-
+            self.mask = nn.Parameter(torch.from_numpy(np.array(mask)).to(torch.int32), requires_grad=False)
 
     def mask_data(self, x):
         if hasattr(self, "mask"):
@@ -48,25 +51,38 @@ class TripletNet(nn.Module):
 class TripletLeNet(TripletNet):
     def __init__(self, *args, **kwargs):
         super(TripletLeNet, self).__init__(*args, **kwargs)
-        # Feature extraction layers
+        
+        # Feature extraction layers (CNN part)
         self.features = nn.Sequential(
+            # Layer 1
             nn.Conv2d(1, 6, 5, 1),
+            nn.BatchNorm2d(6),      
+            nn.ReLU(),              
             nn.MaxPool2d(2, stride=2),
+            
+            # Layer 2
             nn.Conv2d(6, 16, 5, 1),
+            nn.BatchNorm2d(16),     
+            nn.ReLU(),              
             nn.MaxPool2d(2, stride=2),
         )
-        # Embedding layers
+        
+        # Embedding layers (FC part)
         self.linear = nn.Sequential(
             nn.Dropout(p=0.5, inplace=True),
+            
             nn.Linear(16 * 61 * 61, 120),
+            nn.BatchNorm1d(120),    
             nn.GELU(),
+            
             nn.Linear(120, 83),
+            nn.BatchNorm1d(83),     
             nn.GELU(),
         )
 
     def forward_one(self, x):
         x = self.features(x)
-        x = x.view(x.size()[0], -1) # reshape
+        x = x.view(x.size()[0], -1) 
         x = self.linear(x)
         return x
 
