@@ -115,13 +115,13 @@ patience_counter = 0
 
 print(f"Early stopping: patience = {args.patience}, enforced epochs = {args.epoch_enforced_training}")
 
-# ====== 訓練總時間開始 ======
+# ====== training total time starts ======
 total_start = time.time()
 
 # Training loop
 for epoch in range(args.epoch_training):
 
-    # ====== 每個 epoch 的時間開始 ======
+    # ====== each epoch starts, print time ======
     epoch_start = time.time()
 
     model.train()
@@ -169,7 +169,7 @@ for epoch in range(args.epoch_training):
 
     print(f'Epoch [{epoch+1}/{args.epoch_training}], Validation Loss: {epoch_val_loss:.4f}')
 
-    # ====== 每個 epoch 結束，印出時間 ======
+    # ====== each epoch ends, print time ======
     epoch_end = time.time()
     print(f"Epoch {epoch+1} time: {epoch_end - epoch_start:.2f} seconds")
 
@@ -192,7 +192,7 @@ for epoch in range(args.epoch_training):
 torch.save(model.state_dict(), model_save_path + f'_{args.margin:.1f}_last.ckpt')
 print("Training completed")
 
-# ====== 訓練總時間結束 ======
+# ====== training time ends ======
 total_end = time.time()
 total_seconds = total_end - total_start
 hours = int(total_seconds // 3600)
