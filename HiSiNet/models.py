@@ -16,10 +16,6 @@ import torchvision.models as models
 #     def forward(self, x1, x2):
 #         return self.net(x1-x2)
 
-import torch
-import torch.nn as nn
-import numpy as np
-
 class TripletNet(nn.Module):
     def __init__(self, mask=False):
         super(TripletNet, self).__init__()
@@ -56,13 +52,13 @@ class TripletLeNet(TripletNet):
         self.features = nn.Sequential(
             # Layer 1
             nn.Conv2d(1, 6, 5, 1),
-            nn.BatchNorm2d(6),      
+            # nn.BatchNorm2d(6),      
             nn.ReLU(),              
             nn.MaxPool2d(2, stride=2),
             
             # Layer 2
             nn.Conv2d(6, 16, 5, 1),
-            nn.BatchNorm2d(16),     
+            # nn.BatchNorm2d(16),     
             nn.ReLU(),              
             nn.MaxPool2d(2, stride=2),
         )
@@ -72,11 +68,11 @@ class TripletLeNet(TripletNet):
             nn.Dropout(p=0.5, inplace=True),
             
             nn.Linear(16 * 61 * 61, 120),
-            nn.BatchNorm1d(120),    
+            # nn.BatchNorm1d(120),    
             nn.GELU(),
             
             nn.Linear(120, 83),
-            nn.BatchNorm1d(83),     
+            # nn.BatchNorm1d(83),     
             nn.GELU(),
         )
 
