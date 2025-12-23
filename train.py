@@ -24,7 +24,7 @@ parser.add_argument('json_file',  type=str,
                     help='a file location for the json dictionary containing file paths')
 parser.add_argument('learning_rate',  type=float,
                     help='a float for the learning rate')
-parser.add_argument('--batch_size',  type=int, default=17,
+parser.add_argument('--batch_size',  type=int, default=128,
                     help='an int for batch size')
 parser.add_argument('--epoch_training',  type=int, default=30,
                     help='max number of epochs')
