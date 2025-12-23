@@ -48,31 +48,21 @@ class TripletLeNet(TripletNet):
     def __init__(self, *args, **kwargs):
         super(TripletLeNet, self).__init__(*args, **kwargs)
         
-        # Feature extraction layers (CNN part)
         self.features = nn.Sequential(
-            # Layer 1
             nn.Conv2d(1, 6, 5, 1),
-            # nn.BatchNorm2d(6),      
-            nn.ReLU(),              
+            nn.GELU(),              # 修正：將 ReLU 改為 GELU 
             nn.MaxPool2d(2, stride=2),
             
-            # Layer 2
             nn.Conv2d(6, 16, 5, 1),
-            # nn.BatchNorm2d(16),     
-            nn.ReLU(),              
+            nn.GELU(),              # 修正：將 ReLU 改為 GELU 
             nn.MaxPool2d(2, stride=2),
         )
         
-        # Embedding layers (FC part)
         self.linear = nn.Sequential(
             nn.Dropout(p=0.5, inplace=True),
-            
             nn.Linear(16 * 61 * 61, 120),
-            # nn.BatchNorm1d(120),    
             nn.GELU(),
-            
             nn.Linear(120, 83),
-            # nn.BatchNorm1d(83),     
             nn.GELU(),
         )
 
@@ -80,13 +70,8 @@ class TripletLeNet(TripletNet):
         x = self.features(x)
         x = x.view(x.size()[0], -1) 
         x = self.linear(x)
-        return x
-
-    def compute_distances(self, anchor_out, positive_out, negative_out):
-        # Calculate Euclidean distances between anchor-positive and anchor-negative
-        pos_dist = torch.norm(anchor_out - positive_out, dim=1, p=2)
-        neg_dist = torch.norm(anchor_out - negative_out, dim=1, p=2)
-        return pos_dist, neg_dist
+        # 修正：加入 L2 正規化確保三元組距離穩定 
+        return F.normalize(x, p=2, dim=1)
 
 # resnet
 class TripletResNet(nn.Module):
