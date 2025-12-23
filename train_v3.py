@@ -9,7 +9,7 @@ import json
 import os
 import time
 
-# 導入你現有的 Dataset 與模型定義
+# 導入 Dataset 與模型定義
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
 from torch_plus.loss import TripletLoss
@@ -44,6 +44,14 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # ---------------------------------------------------------
+# 檔名參數資訊定義 (新增加的部分)
+# ---------------------------------------------------------
+# 格式範例: TripletLeNet_0.01_128_42_1.0
+file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+# 完整的存檔路徑基礎名稱
+base_save_path = os.path.join(args.outpath, file_param_info)
+
+# ---------------------------------------------------------
 # Data Loading
 # ---------------------------------------------------------
 with open(args.json_file) as f:
@@ -76,25 +84,23 @@ if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 model = model.to(device)
 
+# 儲存初始模型 (包含參數資訊)
+torch.save(model.state_dict(), base_save_path + '_initial.ckpt')
+
 criterion = TripletLoss(margin=args.margin)
-# 論文實作發現固定 LR 穩定，但 AdamW + CosineAnnealing 對現代訓練效果更佳
 optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_training)
-
-# ---------------------------------------------------------
-# Debug 工具函數
-# ---------------------------------------------------------
-def get_stats(a_out, p_out, n_out):
-    # 計算正負樣本的平均歐式距離
-    d_ap = F.pairwise_distance(a_out, p_out, p=2).mean().item()
-    d_an = F.pairwise_distance(a_out, n_out, p=2).mean().item()
-    return d_ap, d_an
 
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
 best_val_loss = float('inf')
 prev_val_loss = float('inf')
+
+def get_stats(a_out, p_out, n_out):
+    d_ap = F.pairwise_distance(a_out, p_out, p=2).mean().item()
+    d_an = F.pairwise_distance(a_out, n_out, p=2).mean().item()
+    return d_ap, d_an
 
 print(f"Starting training for {args.epoch_training} epochs...")
 
@@ -105,7 +111,6 @@ for epoch in range(args.epoch_training):
     for i, (anchor, positive, negative) in enumerate(train_loader):
         anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
 
-        # 每輪第一個 Batch 檢查輸入數據標準化狀態 
         if i == 0:
             with torch.no_grad():
                 print(f"\n[Debug Epoch {epoch+1}] Input Max: {anchor.max().item():.4f}, Mean: {anchor.mean().item():.4f}")
@@ -116,13 +121,11 @@ for epoch in range(args.epoch_training):
         loss = criterion(a_out, p_out, n_out)
         loss.backward()
         
-        # 梯度剪裁，防止梯度爆炸或消失
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         running_loss += loss.item()
 
-        # 每 100 步監控距離變化
         if (i + 1) % 100 == 0 or (i + 1) == no_of_batches:
             d_ap, d_an = get_stats(a_out, p_out, n_out)
             print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{no_of_batches}], "
@@ -142,19 +145,20 @@ for epoch in range(args.epoch_training):
 
     scheduler.step()
 
-    # 模型存檔與 Early Stopping 
-    model_save_name = f"{args.outpath}/{args.model_name}_seed{args.seed}.ckpt"
-    
+    # 儲存最佳模型 (包含參數資訊)
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
-        torch.save(model.state_dict(), model_save_name.replace(".ckpt", "_best.ckpt"))
-        print("Best model saved.")
+        torch.save(model.state_dict(), base_save_path + '_best.ckpt')
+        print(f"Best model saved to {base_save_path}_best.ckpt")
 
-    # 論文早停策略：強制訓練一定週期後，若驗證損失上升超過 10% 則停 
+    # 早停策略 (論文建議強制訓練 5 epoch 後監控 )
     if epoch >= args.epoch_enforced_training:
         if avg_val_loss > 1.1 * prev_val_loss:
             print(f"Early stopping triggered at epoch {epoch+1}")
             break
         prev_val_loss = avg_val_loss
 
+# 儲存最後一個模型 (包含參數資訊)
+torch.save(model.state_dict(), base_save_path + '_last.ckpt')
+print(f"Final model saved to {base_save_path}_last.ckpt")
 print("Training Completed.")
