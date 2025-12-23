@@ -43,35 +43,27 @@ class TripletNet(nn.Module):
         negative_out = self.forward_one(negative)
         return anchor_out, positive_out, negative_out
 
-# refer to the weights of SLeNet
+# refer to the weights of SLeNet 
 class TripletLeNet(TripletNet):
     def __init__(self, *args, **kwargs):
         super(TripletLeNet, self).__init__(*args, **kwargs)
         
         self.features = nn.Sequential(
             nn.Conv2d(1, 6, 5, 1),
-            nn.GELU(),              # 修正：將 ReLU 改為 GELU 
+            nn.GELU(),              # 論文：替換 ReLU 為 GELU 以應對稀疏數據 
             nn.MaxPool2d(2, stride=2),
             
             nn.Conv2d(6, 16, 5, 1),
-            nn.GELU(),              # 修正：將 ReLU 改為 GELU 
+            nn.GELU(),              # 論文：卷積層也必須使用 GELU 
             nn.MaxPool2d(2, stride=2),
-        )
-        
-        self.linear = nn.Sequential(
-            nn.Dropout(p=0.5, inplace=True),
-            nn.Linear(16 * 61 * 61, 120),
-            nn.GELU(),
-            nn.Linear(120, 83),
-            nn.GELU(),
         )
 
     def forward_one(self, x):
         x = self.features(x)
         x = x.view(x.size()[0], -1) 
         x = self.linear(x)
-        # 修正：加入 L2 正規化確保三元組距離穩定 
-        return F.normalize(x, p=2, dim=1)
+        # 關鍵修正：確保距離計算穩定
+        return torch.nn.functional.normalize(x, p=2, dim=1)
 
 # resnet
 class TripletResNet(nn.Module):
