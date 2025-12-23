@@ -20,50 +20,47 @@ class TripletNet(nn.Module):
     def __init__(self, mask=False):
         super(TripletNet, self).__init__()
         if mask:
-            mask = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
-            self.mask = nn.Parameter(torch.from_numpy(np.array(mask)).to(torch.int32), requires_grad=False)
+            mask_array = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
+            self.mask = nn.Parameter(torch.from_numpy(mask_array).float(), requires_grad=False)
 
     def mask_data(self, x):
         if hasattr(self, "mask"):
-            x = torch.mul(self.mask, x)
+            return x * self.mask
         return x
 
-    def forward_one(self, x):
-        raise NotImplementedError
-
-    def forward(self, anchor, positive, negative):
-        # Apply mask to all three inputs
-        anchor = self.mask_data(anchor)
-        positive = self.mask_data(positive)
-        negative = self.mask_data(negative)
-
-        # Get embeddings for all three inputs
-        anchor_out = self.forward_one(anchor)
-        positive_out = self.forward_one(positive)
-        negative_out = self.forward_one(negative)
-        return anchor_out, positive_out, negative_out
-
-# refer to the weights of SLeNet 
 class TripletLeNet(TripletNet):
-    def __init__(self, *args, **kwargs):
-        super(TripletLeNet, self).__init__(*args, **kwargs)
+    def __init__(self, mask=False):
+        super(TripletLeNet, self).__init__(mask=mask)
         
         self.features = nn.Sequential(
             nn.Conv2d(1, 6, 5, 1),
-            nn.GELU(),              # 論文：替換 ReLU 為 GELU 以應對稀疏數據 
+            nn.GELU(),              
             nn.MaxPool2d(2, stride=2),
-            
             nn.Conv2d(6, 16, 5, 1),
-            nn.GELU(),              # 論文：卷積層也必須使用 GELU 
+            nn.GELU(),              
             nn.MaxPool2d(2, stride=2),
+        )
+        
+        # 嵌入層：確保變數名稱為 self.linear
+        self.linear = nn.Sequential(
+            nn.Dropout(p=0.5),
+            nn.Linear(16 * 61 * 61, 120),
+            nn.GELU(),
+            nn.Linear(120, 83),
+            nn.GELU(),
         )
 
     def forward_one(self, x):
+        x = self.mask_data(x)
         x = self.features(x)
-        x = x.view(x.size()[0], -1) 
+        x = x.view(x.size(0), -1) 
+        # 執行到此處就不會再報 AttributeError
         x = self.linear(x)
-        # 關鍵修正：確保距離計算穩定
-        return torch.nn.functional.normalize(x, p=2, dim=1)
+        # 關鍵建議：加入 L2 正規化以防止 Loss 卡在 1.0 (Margin)
+        return F.normalize(x, p=2, dim=1) 
+
+    def forward(self, anchor, positive, negative):
+        return self.forward_one(anchor), self.forward_one(positive), self.forward_one(negative)
 
 # resnet
 class TripletResNet(nn.Module):
