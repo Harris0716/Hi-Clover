@@ -57,8 +57,7 @@ class TripletLeNet(TripletNet):
         # 執行到此處就不會再報 AttributeError
         x = self.linear(x)
         # 關鍵建議：加入 L2 正規化以防止 Loss 卡在 1.0 (Margin)
-        # return F.normalize(x, p=2, dim=1) 
-        return x
+        return F.normalize(x, p=2, dim=1) 
 
     def forward(self, anchor, positive, negative):
         return self.forward_one(anchor), self.forward_one(positive), self.forward_one(negative)
