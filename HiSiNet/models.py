@@ -54,7 +54,7 @@ class TripletLeNet(TripletNet):
         x = self.features(x)
         x = x.view(x.size(0), -1) 
         x = self.linear(x)
-        return F.normalize(x, p=2, dim=1) 
+        return F.normalize(x, p=2, dim=1)  # L2 norm
 
     def forward(self, anchor, positive, negative):
         return self.forward_one(anchor), self.forward_one(positive), self.forward_one(negative)

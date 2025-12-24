@@ -153,6 +153,10 @@ for subset in ["train_val", "test"]:
 # ---------------------------------------------------------
 # 繪圖與存檔
 # ---------------------------------------------------------
+# 從檔名提取參數資訊作為標題的一部分 (例如: 0.01_128_42_0.3)
+# 假設你的檔名格式為: .../TripletLeNet_0.01_128_42_0.3_best.ckpt
+file_base_name = os.path.basename(args.model_infile).replace("_best.ckpt", "").replace("_last.ckpt", "")
+
 for subset, data in results.items():
     a, b, rng = data["hist_data"]
     plt.figure(figsize=(8, 6))
@@ -160,11 +164,13 @@ for subset, data in results.items():
     plt.hist(data["distances"][data["labels"] == 1], bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
     plt.axvline(data["intersect"], color='k', linestyle='--', label=f'Threshold: {data["intersect"]:.2f}')
     
-    plt.title(f"Distance Distribution ({subset})\nSeparation Index: {data['sep_index']:.4f}")
+    # 修改標題，加入參數資訊
+    plt.title(f"Distance Distribution ({subset})\nModel: {file_base_name}\nSeparation Index: {data['sep_index']:.4f}")
     plt.xlabel("Euclidean Distance")
     plt.ylabel("Probability Density")
     plt.legend()
     
+    # 存檔路徑保持一致
     save_fig = f"{args.model_infile.split('.ckpt')[0]}_{subset}_distribution.pdf"
     plt.savefig(save_fig)
     plt.close()
