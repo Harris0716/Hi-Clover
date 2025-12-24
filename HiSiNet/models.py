@@ -41,7 +41,6 @@ class TripletLeNet(TripletNet):
             nn.MaxPool2d(2, stride=2),
         )
         
-        # 嵌入層：確保變數名稱為 self.linear
         self.linear = nn.Sequential(
             nn.Dropout(p=0.5),
             nn.Linear(16 * 61 * 61, 120),
@@ -54,9 +53,7 @@ class TripletLeNet(TripletNet):
         x = self.mask_data(x)
         x = self.features(x)
         x = x.view(x.size(0), -1) 
-        # 執行到此處就不會再報 AttributeError
         x = self.linear(x)
-        # 關鍵建議：加入 L2 正規化以防止 Loss 卡在 1.0 (Margin)
         return F.normalize(x, p=2, dim=1) 
 
     def forward(self, anchor, positive, negative):
