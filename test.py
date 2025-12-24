@@ -171,7 +171,8 @@ for subset, data in results.items():
     plt.legend()
     
     # 存檔路徑保持一致
-    save_fig = f"{args.model_infile.split('.ckpt')[0]}_{subset}_distribution.pdf"
+    # save_fig = f"{args.model_infile.split('.ckpt')[0]}_{subset}_distribution.pdf"
+    save_fig = "{TripletLeNet_0.01_128_42_1.0_best_distribution.pdf"
     plt.savefig(save_fig)
     plt.close()
     print(f"Saved plot: {save_fig}")
