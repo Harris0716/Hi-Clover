@@ -169,26 +169,40 @@ for epoch in range(args.epoch_training):
         prev_val_loss = avg_val_loss
 
 # ---------------------------------------------------------
-# 結束統計與繪圖
+# 結束統計與繪圖 (標題強化版)
 # ---------------------------------------------------------
 # 儲存最後模型
 torch.save(model.state_dict(), base_save_path + '_last.ckpt')
 
-# 新增：計算總訓練時間
+# 計算總訓練時間
 total_duration = time.time() - total_start_time
 hours, rem = divmod(total_duration, 3600)
 minutes, seconds = divmod(rem, 60)
 print(f"\nTraining Completed. Total Time: {int(hours)}h {int(minutes)}m {seconds:.2f}s")
 
-# 新增：自動繪製 Loss 曲線圖
-plt.figure(figsize=(10, 6))
-plt.plot(train_losses, label='Train Loss')
-plt.plot(val_losses, label='Validation Loss')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.title(f'Training History - {args.model_name}')
-plt.legend()
-plt.grid(True)
+# 自動繪製 Loss 曲線圖
+plt.figure(figsize=(12, 7)) # 稍微加寬畫布以容納標題
+plt.plot(train_losses, label='Train Loss', linewidth=2)
+plt.plot(val_losses, label='Validation Loss', linewidth=2)
+
+plt.xlabel('Epochs', fontsize=12)
+plt.ylabel('Loss', fontsize=12)
+
+# --- 關鍵修改：動態標題 ---
+# 使用 \n 換行讓標題更整潔
+plot_title = (
+    f"Training History: {args.model_name}\n"
+    f"LR: {args.learning_rate} | Batch: {args.batch_size} | "
+    f"Margin: {args.margin} | Seed: {args.seed} | Weight Decay: {args.weight_decay}"
+)
+plt.title(plot_title, fontsize=14, fontweight='bold', pad=15)
+
+plt.legend(fontsize=11)
+plt.grid(True, linestyle='--', alpha=0.7)
+plt.tight_layout() # 自動調整佈局確保文字不被切掉
+
 plot_path = base_save_path + '_loss_curve.png'
-plt.savefig(plot_path)
-print(f"Loss curve saved to {plot_path}")
+plt.savefig(plot_path, dpi=300) # 提高解析度到 300dpi
+plt.close()
+
+print(f"Loss curve saved with parameters in title to: {plot_path}")

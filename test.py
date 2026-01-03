@@ -154,9 +154,14 @@ for subset in ["train_val", "test"]:
 # 繪圖與存檔 (優化標題與字體版本)
 # ---------------------------------------------------------
 # 從路徑中提取不含後綴的基礎檔名 (例如: TripletLeNet_0.01_128_42_1.0_best)
-model_base_name = os.path.basename(args.model_infile).split('.ckpt')[0]
+# ---------------------------------------------------------
+# 繪圖與存檔 (優化路徑處理)
+# ---------------------------------------------------------
+# 1. 提取路徑資訊
+model_dir = os.path.dirname(args.model_infile)  # 獲取模型檔案所在的資料夾路徑
+model_base_name = os.path.basename(args.model_infile).split('.ckpt')[0] # 獲取檔名（不含路徑與後綴）
 
-# 定義字體大小變數，方便統一調整
+# 定義字體大小
 TITLE_SIZE = 14
 LABEL_SIZE = 12
 TICK_SIZE = 10
@@ -164,7 +169,7 @@ LEGEND_SIZE = 10
 
 for subset, data in results.items():
     a, b, rng = data["hist_data"]
-    plt.figure(figsize=(9, 7)) # 稍微放大畫布寬度以容納長標題
+    plt.figure(figsize=(9, 7))
     
     # 繪製分配圖
     plt.hist(data["distances"][data["labels"] == 0], bins=rng, density=True, 
@@ -176,37 +181,32 @@ for subset, data in results.items():
     plt.axvline(data["intersect"], color='k', linestyle='--', 
                 label=f'Threshold: {data["intersect"]:.2f}')
     
-    # --- 標題與標籤設置 ---
-    # 標題包含完整參數資訊
+    # 標題與標籤
     full_title = f"Distance Distribution ({subset})\nModel Params: {model_base_name}\nSeparation Index: {data['sep_index']:.4f}"
     plt.title(full_title, fontsize=TITLE_SIZE, fontweight='bold', pad=15)
-    
     plt.xlabel("Euclidean Distance", fontsize=LABEL_SIZE)
     plt.ylabel("Probability Density", fontsize=LABEL_SIZE)
-    
-    # 調整坐標軸刻度字體
     plt.xticks(fontsize=TICK_SIZE)
     plt.yticks(fontsize=TICK_SIZE)
-    
-    # 調整圖例位置與大小
     plt.legend(fontsize=LEGEND_SIZE, loc='upper right')
-    
-    # 網格線增加可讀性
     plt.grid(axis='y', linestyle='--', alpha=0.3)
-    
-    # 自動調整佈局，避免文字重疊
     plt.tight_layout()
     
-    # 存檔名稱
-    save_fig = f"{model_base_name}_{subset}_distribution.pdf"
-    plt.savefig(save_fig, bbox_inches='tight') # bbox_inches 確保所有內容都包進 PDF
+    # 關鍵修改：將 PDF 儲存在模型相同的資料夾
+    save_fig_name = f"{model_base_name}_{subset}_distribution.pdf"
+    save_fig_path = os.path.join(model_dir, save_fig_name) 
+    
+    plt.savefig(save_fig_path, bbox_inches='tight')
     plt.close()
-    print(f"Saved plot: {save_fig}")
+    print(f"Saved plot: {save_fig_path}")
 
 # ---------------------------------------------------------
-# 輸出 CSV (維持原樣)
+# 輸出 CSV (優化路徑處理)
 # ---------------------------------------------------------
-summary_path = f"{args.model_infile.split('.ckpt')[0]}_summary.csv"
+# 關鍵修改：將 CSV 儲存在模型相同的資料夾
+summary_name = f"{model_base_name}_summary.csv"
+summary_path = os.path.join(model_dir, summary_name)
+
 summary_df = pd.DataFrame({
     "set": results.keys(),
     "replicate_rate": [r["rep_rate"] for r in results.values()],
