@@ -151,33 +151,61 @@ for subset in ["train_val", "test"]:
     results[subset] = calculate_metrics(dist, lbl, subset)
 
 # ---------------------------------------------------------
-# 繪圖與存檔
+# 繪圖與存檔 (優化標題與字體版本)
 # ---------------------------------------------------------
-# 從檔名提取參數資訊作為標題的一部分 (例如: 0.01_128_42_0.3)
-# 假設你的檔名格式為: .../TripletLeNet_0.01_128_42_0.3_best.ckpt
-file_base_name = os.path.basename(args.model_infile).replace("_best.ckpt", "").replace("_last.ckpt", "")
+# 從路徑中提取不含後綴的基礎檔名 (例如: TripletLeNet_0.01_128_42_1.0_best)
+model_base_name = os.path.basename(args.model_infile).split('.ckpt')[0]
+
+# 定義字體大小變數，方便統一調整
+TITLE_SIZE = 14
+LABEL_SIZE = 12
+TICK_SIZE = 10
+LEGEND_SIZE = 10
 
 for subset, data in results.items():
     a, b, rng = data["hist_data"]
-    plt.figure(figsize=(8, 6))
-    plt.hist(data["distances"][data["labels"] == 0], bins=rng, density=True, label='replicates', alpha=0.5, color='#108690')
-    plt.hist(data["distances"][data["labels"] == 1], bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
-    plt.axvline(data["intersect"], color='k', linestyle='--', label=f'Threshold: {data["intersect"]:.2f}')
+    plt.figure(figsize=(9, 7)) # 稍微放大畫布寬度以容納長標題
     
-    # 修改標題，加入參數資訊
-    plt.title(f"Distance Distribution ({subset})\nModel: {file_base_name}\nSeparation Index: {data['sep_index']:.4f}")
-    plt.xlabel("Euclidean Distance")
-    plt.ylabel("Probability Density")
-    plt.legend()
+    # 繪製分配圖
+    plt.hist(data["distances"][data["labels"] == 0], bins=rng, density=True, 
+             label='replicates', alpha=0.5, color='#108690')
+    plt.hist(data["distances"][data["labels"] == 1], bins=rng, density=True, 
+             label='conditions', alpha=0.5, color='#1D1E4E')
     
-    # 存檔路徑保持一致
-    # save_fig = f"{args.model_infile.split('.ckpt')[0]}_{subset}_distribution.pdf"
-    save_fig = "TripletLeNet_0.01_128_42_1.0_best_distribution.pdf"
-    plt.savefig(save_fig)
+    # 閾值虛線
+    plt.axvline(data["intersect"], color='k', linestyle='--', 
+                label=f'Threshold: {data["intersect"]:.2f}')
+    
+    # --- 標題與標籤設置 ---
+    # 標題包含完整參數資訊
+    full_title = f"Distance Distribution ({subset})\nModel Params: {model_base_name}\nSeparation Index: {data['sep_index']:.4f}"
+    plt.title(full_title, fontsize=TITLE_SIZE, fontweight='bold', pad=15)
+    
+    plt.xlabel("Euclidean Distance", fontsize=LABEL_SIZE)
+    plt.ylabel("Probability Density", fontsize=LABEL_SIZE)
+    
+    # 調整坐標軸刻度字體
+    plt.xticks(fontsize=TICK_SIZE)
+    plt.yticks(fontsize=TICK_SIZE)
+    
+    # 調整圖例位置與大小
+    plt.legend(fontsize=LEGEND_SIZE, loc='upper right')
+    
+    # 網格線增加可讀性
+    plt.grid(axis='y', linestyle='--', alpha=0.3)
+    
+    # 自動調整佈局，避免文字重疊
+    plt.tight_layout()
+    
+    # 存檔名稱
+    save_fig = f"{model_base_name}_{subset}_distribution.pdf"
+    plt.savefig(save_fig, bbox_inches='tight') # bbox_inches 確保所有內容都包進 PDF
     plt.close()
     print(f"Saved plot: {save_fig}")
 
-# 輸出 CSV
+# ---------------------------------------------------------
+# 輸出 CSV (維持原樣)
+# ---------------------------------------------------------
 summary_path = f"{args.model_infile.split('.ckpt')[0]}_summary.csv"
 summary_df = pd.DataFrame({
     "set": results.keys(),

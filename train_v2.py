@@ -1,3 +1,4 @@
+# Adagrad -> AdamW, add cosine annealing (LR scheduler)
 import numpy as np
 import torch
 import torch.nn as nn
@@ -7,7 +8,8 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse
 import json
 import os
-import time
+import time  # 新增：用於時間統計
+import matplotlib.pyplot as plt  # 新增：用於繪圖
 
 # 導入 Dataset 與模型定義
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
@@ -44,11 +46,9 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # ---------------------------------------------------------
-# 檔名參數資訊定義 (新增加的部分)
+# 檔名參數資訊定義
 # ---------------------------------------------------------
-# 格式範例: TripletLeNet_0.01_128_42_1.0
 file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
-# 完整的存檔路徑基礎名稱
 base_save_path = os.path.join(args.outpath, file_param_info)
 
 # ---------------------------------------------------------
@@ -84,7 +84,6 @@ if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 model = model.to(device)
 
-# 儲存初始模型 (包含參數資訊)
 torch.save(model.state_dict(), base_save_path + '_initial.ckpt')
 
 criterion = TripletLoss(margin=args.margin)
@@ -96,6 +95,8 @@ scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_tra
 # ---------------------------------------------------------
 best_val_loss = float('inf')
 prev_val_loss = float('inf')
+train_losses = []  # 新增：紀錄訓練 Loss 繪圖用
+val_losses = []    # 新增：紀錄驗證 Loss 繪圖用
 
 def get_stats(a_out, p_out, n_out):
     d_ap = F.pairwise_distance(a_out, p_out, p=2).mean().item()
@@ -103,8 +104,10 @@ def get_stats(a_out, p_out, n_out):
     return d_ap, d_an
 
 print(f"Starting training for {args.epoch_training} epochs...")
+total_start_time = time.time()  # 新增：總時間開始
 
 for epoch in range(args.epoch_training):
+    epoch_start_time = time.time()  # 新增：單個 Epoch 時間開始
     model.train()
     running_loss = 0.0
     
@@ -141,24 +144,51 @@ for epoch in range(args.epoch_training):
             val_loss += criterion(a_out, p_out, n_out).item()
     
     avg_val_loss = val_loss / batches_validation
-    print(f"Epoch [{epoch+1}/{args.epoch_training}] Validation Loss: {avg_val_loss:.4f}")
+    
+    # 新增：儲存 Loss 紀錄
+    train_losses.append(running_loss / no_of_batches)
+    val_losses.append(avg_val_loss)
+    
+    # 新增：印出單個 Epoch 耗時
+    epoch_duration = time.time() - epoch_start_time
+    print(f"Epoch [{epoch+1}/{args.epoch_training}] Validation Loss: {avg_val_loss:.4f}, Time: {epoch_duration:.2f}s")
 
     scheduler.step()
 
-    # 儲存最佳模型 (包含參數資訊)
+    # 儲存最佳模型
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
         print(f"Best model saved to {base_save_path}_best.ckpt")
 
-    # 早停策略 (論文建議強制訓練 5 epoch 後監控 )
+    # 早停策略 (維持你原本的 1.1 倍邏輯)
     if epoch >= args.epoch_enforced_training:
         if avg_val_loss > 1.1 * prev_val_loss:
             print(f"Early stopping triggered at epoch {epoch+1}")
             break
         prev_val_loss = avg_val_loss
 
-# 儲存最後一個模型 (包含參數資訊)
+# ---------------------------------------------------------
+# 結束統計與繪圖
+# ---------------------------------------------------------
+# 儲存最後模型
 torch.save(model.state_dict(), base_save_path + '_last.ckpt')
-print(f"Final model saved to {base_save_path}_last.ckpt")
-print("Training Completed.")
+
+# 新增：計算總訓練時間
+total_duration = time.time() - total_start_time
+hours, rem = divmod(total_duration, 3600)
+minutes, seconds = divmod(rem, 60)
+print(f"\nTraining Completed. Total Time: {int(hours)}h {int(minutes)}m {seconds:.2f}s")
+
+# 新增：自動繪製 Loss 曲線圖
+plt.figure(figsize=(10, 6))
+plt.plot(train_losses, label='Train Loss')
+plt.plot(val_losses, label='Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title(f'Training History - {args.model_name}')
+plt.legend()
+plt.grid(True)
+plot_path = base_save_path + '_loss_curve.png'
+plt.savefig(plot_path)
+print(f"Loss curve saved to {plot_path}")

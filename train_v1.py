@@ -1,3 +1,5 @@
+# stoppin criterion -> val_loss > 10% and then stop
+# without using 
 import numpy as np
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from torchvision import transforms
