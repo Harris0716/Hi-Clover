@@ -114,9 +114,9 @@ for epoch in range(args.epoch_training):
     for i, (anchor, positive, negative) in enumerate(train_loader):
         anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
 
-        if i == 0:
-            with torch.no_grad():
-                print(f"\n[Debug Epoch {epoch+1}] Input Max: {anchor.max().item():.4f}, Mean: {anchor.mean().item():.4f}")
+        # if i == 0:
+        #     with torch.no_grad():
+        #         print(f"\n[Debug Epoch {epoch+1}] Input Max: {anchor.max().item():.4f}, Mean: {anchor.mean().item():.4f}")
 
         optimizer.zero_grad()
         a_out, p_out, n_out = model(anchor, positive, negative)
