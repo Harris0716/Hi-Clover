@@ -1,5 +1,6 @@
-# stoppin criterion -> val_loss > 10% and then stop
-# without using 
+# original code
+# stopping criterion -> val_loss > 10% and then stop
+# without using AdamW and cosine annealing (LR scheduler)
 import numpy as np
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from torchvision import transforms
