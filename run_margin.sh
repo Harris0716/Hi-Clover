@@ -18,11 +18,11 @@ do
     echo "============================================"
 
     # 1. 定義輸出路徑
-    OUT_DIR="./outputs_margins/margin_${MARGIN}/"
+    OUT_DIR="./v1_outputs_margins/margin_${MARGIN}/"
     mkdir -p $OUT_DIR
 
-    # 2. 訓練 (使用您提供的 train_v2.py 邏輯)
-    python Hi-Clover/train_v2.py $MODEL config.json $LR $DATA \
+    # 2. 訓練 (使用您提供的 train_v1.py 邏輯)
+    python Hi-Clover/train_v1.py $MODEL config.json $LR $DATA \
         --batch_size $BATCH \
         --epoch_training 100 \
         --epoch_enforced_training 20 \
