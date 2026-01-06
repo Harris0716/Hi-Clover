@@ -182,29 +182,65 @@ for subset in ["train_val", "test"]:
     print(f"Saved Distribution Plot: {dist_fig_path}")
 
     # ---------------------------------------------------------
-    # 繪圖 2: t-SNE Embedding Space Visualization
+    # 繪圖 2: t-SNE Embedding Space Visualization (雙色優化版)
     # ---------------------------------------------------------
-    print(f"Generating t-SNE for {subset}...")
-    test_embeddings = []
+    print(f"Generating Colored t-SNE for {subset} (TAM vs NIPBL)...")
+    from matplotlib.colors import ListedColormap
+    
+    test_embeddings, test_labels = [], []
     model.eval()
+    
+    # 為了確保標籤正確，我們直接從原始 dataset 中取樣
+    # 建立一個臨時的單一讀取器來獲取類別標籤
+    temp_ds = GroupedHiCDataset([HiCDatasetDec.load(p) for p in paths])
+    temp_loader = DataLoader(temp_ds, batch_size=64, shuffle=True)
+
     with torch.no_grad():
-        for i, batch_data in enumerate(loader):
-            # 取每一對中的第一張圖作為特徵點
-            img = batch_data[0].to(device)
+        for i, batch in enumerate(temp_loader):
+            img = batch[0].to(device)
+            lbl = batch[3].to(device) # 取得原始 class_id (1 或 2)
+            
             emb = model.forward_one(img)
             test_embeddings.extend(emb.cpu().numpy())
-            if len(test_embeddings) >= 2000: break # 限制採樣數以加快速度
+            test_labels.extend(lbl.cpu().numpy())
+            
+            if len(test_embeddings) >= 2000: break 
 
-    tsne_res = TSNE(n_components=2, random_state=42).fit_transform(np.array(test_embeddings))
-    plt.figure(figsize=(10, 8))
-    plt.scatter(tsne_res[:, 0], tsne_res[:, 1], alpha=0.6, s=15, color='#108690')
-    plt.title(f"Test Set Embedding Space ({subset})\n{model_base_name}", fontsize=TITLE_SIZE)
-    plt.xlabel("t-SNE Dim 1"); plt.ylabel("t-SNE Dim 2")
+    # 執行 t-SNE
+    tsne_res = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42).fit_transform(np.array(test_embeddings))
+    
+    # 設定紅藍配色：ID 1 (NIPBL) -> 藍色, ID 2 (TAM) -> 紅色
+    custom_colors = ['#1F77B4', '#D62728'] 
+    my_cmap = ListedColormap(custom_colors)
+    
+    plt.figure(figsize=(11, 9))
+    scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], 
+                          c=test_labels, 
+                          cmap=my_cmap, 
+                          s=25, 
+                          alpha=0.8, 
+                          edgecolors='white', 
+                          linewidths=0.3)
+
+    # 建立正確的圖例名稱 (1: NIPBL, 2: TAM)
+    unique_l = np.unique(test_labels)
+    id_to_name = {1: "NIPBL", 2: "TAM"}
+    names = [id_to_name.get(int(i), f"ID {int(i)}") for i in unique_l]
+    
+    plt.legend(handles=scatter.legend_elements()[0], labels=names, title="Cell Lines", fontsize=10)
+
+    # 在標題加入詳細參數資訊
+    full_title = f"t-SNE Embedding Space ({subset})\n" \
+                 f"Model: {args.model_name} | Margin: 0.5 | Set: {subset}"
+    plt.title(full_title, fontsize=TITLE_SIZE, fontweight='bold', pad=15)
+    plt.xlabel("t-SNE Dim 1", fontsize=LABEL_SIZE)
+    plt.ylabel("t-SNE Dim 2", fontsize=LABEL_SIZE)
+    plt.grid(True, linestyle='--', alpha=0.3)
     
     tsne_fig_path = os.path.join(model_dir, f"{model_base_name}_{subset}_tsne.pdf")
     plt.savefig(tsne_fig_path, bbox_inches='tight')
     plt.close()
-    print(f"Saved t-SNE Plot: {tsne_fig_path}")
+    print(f"Saved Colored t-SNE Plot: {tsne_fig_path}")
 
 # ---------------------------------------------------------
 # 輸出 CSV 統計總表
