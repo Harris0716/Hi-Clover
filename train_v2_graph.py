@@ -71,7 +71,7 @@ val_dataset = GroupedTripletHiCDataset([
         reference=reference_genomes[dataset_config[data_name]["reference"]])
     for data_name in args.data_inputs])
 
-# 注意：Dataset 修改後，每個 batch 會回傳 4 個值
+# 務必確保 HiCDatasetClass 已修改為回傳 4 個值
 train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=RandomSampler(train_dataset), num_workers=2, pin_memory=True)
 val_loader = DataLoader(val_dataset, batch_size=128, sampler=SequentialSampler(val_dataset), num_workers=2, pin_memory=True)
 
@@ -88,14 +88,18 @@ optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_training)
 
 # ---------------------------------------------------------
-# Training Loop
+# Stats Containers
 # ---------------------------------------------------------
 best_val_loss = float('inf')
 prev_val_loss = float('inf')
 train_losses, val_losses, lr_history, grad_norm_history = [], [], [], []
 best_d_ap_dist, best_d_an_dist = [], []
+val_d_ap_history, val_d_an_history = [], []
 
-print(f"Starting training...")
+# ---------------------------------------------------------
+# Training Loop
+# ---------------------------------------------------------
+print(f"Starting training for {args.epoch_training} epochs...")
 total_start_time = time.time()
 
 for epoch in range(args.epoch_training):
@@ -104,7 +108,7 @@ for epoch in range(args.epoch_training):
     running_loss, epoch_grad_norms = 0.0, []
     
     for i, data in enumerate(train_loader):
-        # 解構資料 (忽略訓練時不需要的 label)
+        # 解構資料 (a, p, n, label)
         anchor, positive, negative = data[0].to(device), data[1].to(device), data[2].to(device)
 
         optimizer.zero_grad()
@@ -112,12 +116,20 @@ for epoch in range(args.epoch_training):
         loss = criterion(a_out, p_out, n_out)
         loss.backward()
         
-        # 紀錄梯度範數
+        # 梯度裁剪與紀錄
         total_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         epoch_grad_norms.append(total_norm.item())
         
         optimizer.step()
         running_loss += loss.item()
+
+        # --- 即時 Info Message ---
+        if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
+            with torch.no_grad():
+                d_ap_batch = F.pairwise_distance(a_out, p_out, p=2).mean().item()
+                d_an_batch = F.pairwise_distance(a_out, n_out, p=2).mean().item()
+            print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], "
+                  f"Loss: {running_loss/(i+1):.4f}, d(a,p): {d_ap_batch:.4f}, d(a,n): {d_an_batch:.4f}")
 
     # Validation Phase
     model.eval()
@@ -134,18 +146,29 @@ for epoch in range(args.epoch_training):
             current_val_d_an.extend(d_an.cpu().numpy())
     
     avg_val_loss = val_loss / len(val_loader)
+    avg_val_d_ap = np.mean(current_val_d_ap)
+    avg_val_d_an = np.mean(current_val_d_an)
+    
+    # 紀錄歷史
     train_losses.append(running_loss / len(train_loader))
     val_losses.append(avg_val_loss)
+    val_d_ap_history.append(avg_val_d_ap)
+    val_d_an_history.append(avg_val_d_an)
     lr_history.append(optimizer.param_groups[0]['lr'])
     grad_norm_history.append(np.mean(epoch_grad_norms))
 
-    print(f"Epoch [{epoch+1}/{args.epoch_training}] Val Loss: {avg_val_loss:.4f}, Time: {time.time()-epoch_start_time:.2f}s")
+    # --- 每輪結束 Info Message ---
+    epoch_duration = time.time() - epoch_start_time
+    print(f"Epoch [{epoch+1}/{args.epoch_training}] Val Loss: {avg_val_loss:.4f}, "
+          f"d(a,p): {avg_val_d_ap:.4f}, d(a,n): {avg_val_d_an:.4f}, Time: {epoch_duration:.2f}s")
+
     scheduler.step()
 
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
         best_d_ap_dist, best_d_an_dist = current_val_d_ap, current_val_d_an
+        print(f"*** Best model saved (Loss: {best_val_loss:.4f}) ***")
 
     if epoch >= args.epoch_enforced_training and avg_val_loss > 1.1 * prev_val_loss:
         print("Early stopping triggered.")
@@ -160,29 +183,37 @@ def save_fig(fig, suffix):
     fig.savefig(base_save_path + suffix, dpi=300)
     plt.close(fig)
 
-# 1. Loss & LR & Grad Norm (整合圖)
+# 1. Training Stats
 fig, ax = plt.subplots(1, 3, figsize=(18, 5))
 ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss'); ax[0].legend()
 ax[1].plot(lr_history, color='purple'); ax[1].set_title('Learning Rate'); ax[1].set_yscale('log')
 ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(1.0, color='r', linestyle='--')
 save_fig(fig, '_training_stats.png')
 
-# 2. Distance Distribution
+# 2. Distance Evolution (折線圖)
+fig_evol = plt.figure(figsize=(10, 6))
+plt.plot(val_d_ap_history, label='Avg d(a,p)', color='green', marker='o')
+plt.plot(val_d_an_history, label='Avg d(a,n)', color='red', marker='o')
+plt.xlabel('Epochs'); plt.ylabel('Distance'); plt.legend(); plt.grid(True, alpha=0.3)
+plt.title("Distance Evolution over Epochs"); save_fig(fig_evol, '_distance_evolution.png')
+
+# 3. Distance Distribution (直方圖)
 fig_dist = plt.figure(figsize=(10, 6))
 plt.hist(best_d_ap_dist, bins=50, alpha=0.6, label='Positive d(a,p)', color='g', density=True)
 plt.hist(best_d_an_dist, bins=50, alpha=0.6, label='Negative d(a,n)', color='r', density=True)
 plt.title("Distance Distribution (Best Model)"); plt.legend()
 save_fig(fig_dist, '_dist_hist.png')
 
-# 3. Colored t-SNE
+# 4. Colored t-SNE
 print("Generating Colored t-SNE...")
 model.load_state_dict(torch.load(base_save_path + '_best.ckpt'))
 model.eval()
 embs, labels = [], []
 with torch.no_grad():
-    for anchor, _, _, lbl in val_loader:
-        out, _, _ = model(anchor.to(device), anchor.to(device), anchor.to(device))
-        embs.extend(out.cpu().numpy()); labels.extend(lbl.numpy())
+    for data in val_loader:
+        anchor, lbl = data[0].to(device), data[3].to(device)
+        out, _, _ = model(anchor, anchor, anchor)
+        embs.extend(out.cpu().numpy()); labels.extend(lbl.cpu().numpy())
         if len(embs) >= 2000: break
 
 tsne_res = TSNE(n_components=2, random_state=args.seed).fit_transform(np.array(embs))
@@ -190,7 +221,6 @@ fig_tsne = plt.figure(figsize=(10, 8))
 scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], c=labels[:len(tsne_res)], cmap='tab10', s=15, alpha=0.7)
 unique_l = np.unique(labels[:len(tsne_res)])
 plt.legend(handles=scatter.legend_elements()[0], labels=[args.data_inputs[int(i)] for i in unique_l], title="Sources")
-plt.title("Colored t-SNE Visualization")
-save_fig(fig_tsne, '_tsne_colored.png')
+plt.title("Colored t-SNE Visualization"); save_fig(fig_tsne, '_tsne_colored.png')
 
-print("Done. All plots saved.")
+print(f"\nTraining and Visualization Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
