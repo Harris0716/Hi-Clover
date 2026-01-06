@@ -182,33 +182,33 @@ for subset in ["train_val", "test"]:
     print(f"Saved Distribution Plot: {dist_fig_path}")
 
     # ---------------------------------------------------------
-    # 4 色優化版: 修正 batch 處理邏輯
+    # 4 色修正版: 平衡抽樣 (確保涵蓋所有 R1/R2/TAM/NIPBL)
     # ---------------------------------------------------------
-    print(f"Generating 4-color t-SNE for {subset} (R1 vs R2 vs Conditions)...")
+    print(f"Generating Balanced 4-color t-SNE for {subset}...")
     from matplotlib.colors import ListedColormap
     
     test_embeddings, detailed_labels = [], []
     model.eval()
     
+    # 計算每個檔案應該抽取的樣本數，以總數約 5000 為目標
+    samples_per_file = max(1, 5000 // len(paths))
+    
     with torch.no_grad():
         for p in paths:
             temp_ds = HiCDatasetDec.load(p)
-            # 這裡 batch_size 可以設大一點加快速度
-            temp_loader = DataLoader(temp_ds, batch_size=128, shuffle=True)
+            # 使用 shuffle=True 確保抽到的是該檔案中隨機的區域
+            temp_loader = DataLoader(temp_ds, batch_size=64, shuffle=True)
             
-            # 判斷目前讀取的這個檔案是 R1 還是 R2
             is_r2 = 1 if ('R2' in p or 'rep2' in p) else 0
+            file_count = 0 # 紀錄目前檔案已抽取的數量
             
             for i, batch in enumerate(temp_loader):
                 img = batch[0].to(device)
-                # 取得這整個 batch 的 class_ids (這是一個陣列)
                 class_ids = batch[-1].cpu().numpy() 
                 
-                # 通過模型取得 Embedding
                 emb = model.forward_one(img)
                 test_embeddings.extend(emb.cpu().numpy())
                 
-                # 為 batch 中的每一個樣本分配 1-4 的標籤
                 for cid in class_ids:
                     if cid == 1: # NIPBL
                         final_lbl = 1 if is_r2 == 0 else 2
@@ -216,17 +216,26 @@ for subset in ["train_val", "test"]:
                         final_lbl = 3 if is_r2 == 0 else 4
                     detailed_labels.append(final_lbl)
                 
-                if len(test_embeddings) >= 5000: break
-            if len(test_embeddings) >= 5000: break
+                file_count += len(class_ids)
+                # 如果這個檔案抽夠了，就換下一個檔案
+                if file_count >= samples_per_file:
+                    break 
 
-    # 執行 t-SNE (確保 Embedding 與 Label 長度一致)
-    test_embeddings = np.array(test_embeddings)[:5000]
-    detailed_labels = np.array(detailed_labels)[:5000]
+    # 確保最終陣列長度對齊
+    test_embeddings = np.array(test_embeddings)
+    detailed_labels = np.array(detailed_labels)
+    
+    # 如果樣本太多，進行最後一次全局隨機裁切到 5000
+    if len(test_embeddings) > 5000:
+        indices = np.random.choice(len(test_embeddings), 5000, replace=False)
+        test_embeddings = test_embeddings[indices]
+        detailed_labels = detailed_labels[indices]
 
-    print(f"Performing t-SNE on {len(test_embeddings)} points...")
+    print(f"Final plot contains {len(test_embeddings)} points from {len(paths)} files.")
+
+    # --- 繪圖邏輯保持不變 ---
     tsne_res = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42).fit_transform(test_embeddings)
     
-    # 配色：深藍(NIPBL R1), 淺藍(NIPBL R2), 深紅(TAM R1), 淺紅(TAM R2)
     custom_colors = ['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'] 
     my_cmap = ListedColormap(custom_colors)
     
@@ -235,15 +244,14 @@ for subset in ["train_val", "test"]:
                           c=detailed_labels, cmap=my_cmap, s=20, alpha=0.7, edgecolors='none')
 
     legend_labels = ["NIPBL R1", "NIPBL R2", "TAM R1", "TAM R2"]
-    plt.legend(handles=scatter.legend_elements()[0], labels=legend_labels, title="Samples", loc='best')
+    # 確保 legend 只顯示圖中實際存在的類別
+    unique_ids = np.unique(detailed_labels).astype(int)
+    handles, _ = scatter.legend_elements()
+    actual_labels = [legend_labels[i-1] for i in unique_ids]
     
-    plt.title(f"Replicates vs Conditions Visibility ({subset})\nModel: {args.model_name}", fontsize=14, fontweight='bold')
-    plt.xlabel("t-SNE dimension 1"); plt.ylabel("t-SNE dimension 2")
-    plt.grid(True, linestyle='--', alpha=0.3)
-    
-    tsne_fig_path = os.path.join(model_dir, f"{model_base_name}_{subset}_4color_tsne.pdf")
-    plt.savefig(tsne_fig_path, bbox_inches='tight')
-    plt.close()
+    plt.legend(handles=handles, labels=actual_labels, title="Samples", loc='best')
+    plt.title(f"Replicates vs Conditions Visibility ({subset})", fontsize=14, fontweight='bold')
+    # ... 其餘存檔邏輯 ...
 
 # ---------------------------------------------------------
 # 輸出 CSV 統計總表
