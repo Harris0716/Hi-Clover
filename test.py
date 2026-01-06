@@ -65,8 +65,14 @@ def calculate_metrics(distances, labels):
     separation_index = 1 - simpson(overlap, x=bin_centers)
     rep_rate = np.sum(rep_dist < intersect) / len(rep_dist)
     cond_rate = np.sum(cond_dist >= intersect) / len(cond_dist)
-    return {"intersect": intersect, "rep_rate": rep_rate, "cond_rate": cond_rate, 
-            "mean_perf": (rep_rate + cond_rate) / 2, "sep_index": separation_index, "hist_data": (a, b, rng)}
+    return {
+        "intersect": intersect, 
+        "rep_rate": rep_rate, 
+        "cond_rate": cond_rate, 
+        "mean_perf": (rep_rate + cond_rate) / 2, 
+        "sep_index": separation_index, 
+        "hist_data": (a, b, rng)
+    }
 
 # ---------------------------------------------------------
 # Main Execution
@@ -82,7 +88,7 @@ with open(args.json_file) as f:
 
 model_dir = os.path.dirname(args.model_infile)
 model_base_name = os.path.basename(args.model_infile).split('.ckpt')[0]
-results = {}
+results = []
 
 for subset in ["train_val", "test"]:
     print(f"--- Processing {subset} set ---")
@@ -100,18 +106,33 @@ for subset in ["train_val", "test"]:
     loader = DataLoader(ds, batch_size=100, sampler=SequentialSampler(ds))
     dist, lbl = test_triplet_by_siamese(model, loader, device)
     data = calculate_metrics(dist, lbl)
-    results[subset] = data
+    
+    # 將數據加入結果列表 (移除 intersect 欄位)
+    results.append({
+        "set": subset,
+        "rep_rate": round(data["rep_rate"], 4),
+        "cond_rate": round(data["cond_rate"], 4),
+        "mean_perf": round(data["mean_perf"], 4),
+        "sep_index": round(data["sep_index"], 4)
+    })
 
-    # 繪製直方圖
+    # 繪製直方圖：保留 Threshold 標註
     plt.figure(figsize=(9, 7))
     plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='replicates', alpha=0.5, color='#108690')
     plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='conditions', alpha=0.5, color='#1D1E4E')
-    plt.axvline(data["intersect"], color='k', linestyle='--', label=f'Threshold: {data["intersect"]:.2f}')
+    plt.axvline(data["intersect"], color='k', linestyle='--')
+    
+    # 在圖上標註 Threshold 數值
+    plt.text(data["intersect"]*1.05, plt.gca().get_ylim()[1]*0.9, f'Threshold: {data["intersect"]:.2f}', 
+             fontweight='bold', fontsize=10)
+    
     plt.title(f"Distance Distribution ({subset})\nSI: {data['sep_index']:.4f}", fontweight='bold')
+    plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density")
+    plt.legend(loc='upper right')
     plt.savefig(os.path.join(model_dir, f"{model_base_name}_{subset}_distribution.pdf"), bbox_inches='tight')
     plt.close()
 
-    # 2. 核心：平衡 4 色 t-SNE 視覺化
+    # 2. 平衡 4 色 t-SNE 視覺化
     print(f"Generating Balanced 4-color t-SNE for {subset}...")
     test_embeddings, detailed_labels = [], []
     samples_per_file = max(1, 5000 // len(paths))
@@ -128,8 +149,8 @@ for subset in ["train_val", "test"]:
                 emb = model.forward_one(img) # 提取 Anchor Embedding
                 test_embeddings.extend(emb.cpu().numpy())
                 for cid in class_ids:
-                    if cid == 1: final_lbl = 1 if is_r2 == 0 else 2 # NIPBL R1/R2
-                    else: final_lbl = 3 if is_r2 == 0 else 4        # TAM R1/R2
+                    if cid == 1: final_lbl = 1 if is_r2 == 0 else 2
+                    else: final_lbl = 3 if is_r2 == 0 else 4
                     detailed_labels.append(final_lbl)
                 file_count += len(class_ids)
                 if file_count >= samples_per_file: break
@@ -140,12 +161,10 @@ for subset in ["train_val", "test"]:
         idx = np.random.choice(len(test_embeddings), 5000, replace=False)
         test_embeddings, detailed_labels = test_embeddings[idx], detailed_labels[idx]
 
-    print(f"Final plot contains {len(test_embeddings)} points. Calculating t-SNE...")
-    # 使用 max_iter 取代舊版的 n_iter
     tsne_res = TSNE(n_components=2, perplexity=30, max_iter=1000, random_state=42).fit_transform(test_embeddings)
     
     plt.figure(figsize=(12, 9))
-    custom_colors = ['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'] # 深藍, 淺藍, 深紅, 淺紅
+    custom_colors = ['#1F77B4', '#AEC7E8', '#D62728', '#FF9896']
     my_cmap = ListedColormap(custom_colors)
     scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], c=detailed_labels, cmap=my_cmap, s=20, alpha=0.7)
     
@@ -160,8 +179,10 @@ for subset in ["train_val", "test"]:
     plt.close()
     print(f"Successfully saved t-SNE Plot: {tsne_fig_path}")
 
-# 輸出統計 CSV
-pd.DataFrame({"set": results.keys(), "rep_rate": [r["rep_rate"] for r in results.values()],
-              "cond_rate": [r["cond_rate"] for r in results.values()],
-              "SI": [r["sep_index"] for r in results.values()]}).to_csv(os.path.join(model_dir, f"{model_base_name}_summary.csv"), index=False)
-print(f"All process completed. Summary saved.")
+# ---------------------------------------------------------
+# 輸出 CSV (不包含 intersect)
+# ---------------------------------------------------------
+summary_df = pd.DataFrame(results)
+summary_df = summary_df[["set", "rep_rate", "cond_rate", "mean_perf", "sep_index"]]
+summary_df.to_csv(os.path.join(model_dir, f"{model_base_name}_summary.csv"), index=False)
+print(f"All process completed. Summary saved to CSV without 'intersect'.")
