@@ -206,7 +206,7 @@ save_fig(fig_dist, '_dist_hist.png')
 
 # 4. Colored t-SNE
 print("Generating Colored t-SNE...")
-model.load_state_dict(torch.load(base_save_path + '_best.ckpt'))
+model.load_state_dict(torch.load(base_save_path + '_best.ckpt', weights_only=True))
 model.eval()
 embs, labels = [], []
 with torch.no_grad():
