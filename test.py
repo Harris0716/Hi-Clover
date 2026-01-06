@@ -196,15 +196,17 @@ for subset in ["train_val", "test"]:
     temp_loader = DataLoader(temp_ds, batch_size=64, shuffle=True)
 
     with torch.no_grad():
-        for i, batch in enumerate(temp_loader):
-            img = batch[0].to(device)
-            lbl = batch[3].to(device) # 取得原始 class_id (1 或 2)
-            
-            emb = model.forward_one(img)
-            test_embeddings.extend(emb.cpu().numpy())
-            test_labels.extend(lbl.cpu().numpy())
-            
-            if len(test_embeddings) >= 2000: break 
+    for i, batch in enumerate(temp_loader):
+        img = batch[0].to(device)
+        
+        # 修正這裡：使用 batch[-1] 確保抓到最後一個元素 (即 class_id)
+        lbl = batch[-1].to(device) 
+        
+        emb = model.forward_one(img)
+        test_embeddings.extend(emb.cpu().numpy())
+        test_labels.extend(lbl.cpu().numpy())
+        
+        if len(test_embeddings) >= 2000: break
 
     # 執行 t-SNE
     tsne_res = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42).fit_transform(np.array(test_embeddings))
