@@ -205,32 +205,34 @@ plt.title("Distance Distribution (Best Model)"); plt.legend()
 save_fig(fig_dist, '_dist_hist.png')
 
 # ---------------------------------------------------------
-# 4. Colored t-SNE (優化版：紅藍配色與參數標題)
+# 4. Colored t-SNE (已確認 ID: 1=NIPBL, 2=TAM)
 # ---------------------------------------------------------
-print("Generating Colored t-SNE...")
+print("Generating Colored t-SNE with TAM/NIPBL labels...")
 from matplotlib.colors import ListedColormap
 
+# 載入模型並設定為評估模式
 model.load_state_dict(torch.load(base_save_path + '_best.ckpt', weights_only=True))
 model.eval()
 
 embs, labels = [], []
 with torch.no_grad():
     for data in val_loader:
+        # data[0] 是影像, data[3] 是 class_id
         anchor, lbl = data[0].to(device), data[3].to(device)
         out, _, _ = model(anchor, anchor, anchor)
         embs.extend(out.cpu().numpy())
         labels.extend(lbl.cpu().numpy())
         if len(embs) >= 2000: break
 
+# 執行 t-SNE 降維
 tsne_res = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=args.seed).fit_transform(np.array(embs))
 
-# 設定紅藍配色 (ID 1 通常對應第一個色，ID 2 對應第二個)
-# 這裡使用標準紅 (#D62728) 與 深藍 (#1F77B4)
+# --- 設定紅藍配色 ---
+# ID 1 (NIPBL) -> 深藍 (#1F77B4), ID 2 (TAM) -> 鮮紅 (#D62728)
 custom_colors = ['#1F77B4', '#D62728'] 
 my_cmap = ListedColormap(custom_colors)
 
 fig_tsne = plt.figure(figsize=(11, 9))
-# 優化點：s=25 增加點的大小, edgecolors='white' 增加點的邊界感讓視覺更清晰
 scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], 
                       c=labels[:len(tsne_res)], 
                       cmap=my_cmap, 
@@ -239,27 +241,22 @@ scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1],
                       edgecolors='white', 
                       linewidths=0.3)
 
-# 圖例名稱處理
+# --- 正確的名字映射 ---
 unique_l = np.unique(labels[:len(tsne_res)])
-id_to_name = {
-    1: "NIPBL",
-    2: "TAM"
-}
-
+id_to_name = {1: "NIPBL", 2: "TAM"} # 根據你的測試結果
 names = [id_to_name.get(int(i), f"ID {int(i)}") for i in unique_l]
 
-plt.legend(handles=scatter.legend_elements()[0], labels=names, title="Biological Sources", fontsize=10)
+plt.legend(handles=scatter.legend_elements()[0], labels=names, title="Cell Lines", fontsize=10)
 
-# 在標題加入詳細參數資訊
-full_title = f"t-SNE Embedding Space Visualization\n" \
-             f"Model: {args.model_name} | LR: {args.learning_rate} | Margin: {args.margin} | Batch: {args.batch_size}"
-plt.title(full_title, fontsize=13, fontweight='bold', pad=15)
-plt.xlabel("t-SNE dimension 1", fontsize=11)
-plt.ylabel("t-SNE dimension 2", fontsize=11)
-
-# 加入輕微的網格線增加層次感
+# --- 加入參數資訊的標題 ---
+params_text = f"Model: {args.model_name} | LR: {args.learning_rate} | Margin: {args.margin} | BS: {args.batch_size}"
+plt.title(f"t-SNE Embedding Visualization (TAM vs NIPBL)\n{params_text}", 
+          fontsize=13, fontweight='bold', pad=15)
+plt.xlabel("t-SNE dimension 1")
+plt.ylabel("t-SNE dimension 2")
 plt.grid(True, linestyle='--', alpha=0.3)
 
 save_fig(fig_tsne, '_tsne_colored.png')
+print(f"Plot saved to: {base_save_path}_tsne_colored.png")
 
 print(f"\nTraining and Visualization Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
