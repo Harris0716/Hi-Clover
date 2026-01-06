@@ -206,7 +206,7 @@ for subset in ["train_val", "test"]:
             test_embeddings.extend(emb.cpu().numpy())
             test_labels.extend(lbl.cpu().numpy())
             
-            if len(test_embeddings) >= 2000: break
+            if len(test_embeddings) >= 5000: break
 
     # 執行 t-SNE
     tsne_res = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42).fit_transform(np.array(test_embeddings))
