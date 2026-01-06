@@ -372,7 +372,7 @@ class PairOfDatasets(TripletHiCDataset):
         self.paired_maps = {chromosome: self.make_maps(chromosome) for chromosome in self.chromosomes.keys()}
 
     def append_data(self, curr_data, pos):
-        """Generate triplets of feature vectors from the model."""
+        """Generate triplets from current data."""
         if len(curr_data) < 2:
             return
 
@@ -384,27 +384,25 @@ class PairOfDatasets(TripletHiCDataset):
                 class_groups[class_id] = []
             class_groups[class_id].append(data)
 
-        # Generate triplets with features
         for anchor_class in class_groups:
             if len(class_groups[anchor_class]) < 2:
                 continue
 
             for i, anchor in enumerate(class_groups[anchor_class]):
+                # Select positive samples from same class
                 for j in range(i + 1, len(class_groups[anchor_class])):
                     positive = class_groups[anchor_class][j]
 
+                    # Select negative samples from different classes
                     for other_class in class_groups:
                         if other_class != anchor_class:
                             for negative in class_groups[other_class]:
-                                # Extract features using the model
-                                anchor_feat = self.model.features(anchor[0].unsqueeze(0)).detach().numpy()
-                                positive_feat = self.model.features(positive[0].unsqueeze(0)).detach().numpy()
-                                negative_feat = self.model.features(negative[0].unsqueeze(0)).detach().numpy()
-
+                                # 將 anchor_class 加入 tuple 以便 t-SNE 標色
                                 self.data.append((
-                                    anchor_feat[0],
-                                    positive_feat[0],
-                                    negative_feat[0]
+                                    anchor[0],    # anchor imag e
+                                    positive[0],  # positive image
+                                    negative[0],  # negative image
+                                    anchor_class  # 新增的標籤
                                 ))
                                 self.positions.append(pos)
                                 self.labels.append((anchor_class, other_class))
