@@ -11,8 +11,9 @@ import pandas as pd
 from scipy.integrate import simpson
 from numpy import minimum
 from collections import OrderedDict
+from sklearn.manifold import TSNE
 
-# 導入你現有的 Dataset 與模型定義
+# 導入 Dataset 與模型定義
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset, GroupedHiCDataset
 import HiSiNet.models as models
 from HiSiNet.reference_dictionaries import reference_genomes
@@ -42,8 +43,10 @@ def test_triplet_by_siamese(model, dataloader, device):
     model.eval()
     with torch.no_grad():
         for i, data in enumerate(dataloader):
-            input1, input2, label = data
-            input1, input2 = input1.to(device), input2.to(device)
+            # 修正點：改用索引讀取 (data[0], data[1], data[2])，以增加對 Dataset 修改後的兼容性
+            input1 = data[0].to(device)
+            input2 = data[1].to(device)
+            label = data[2] # 這是 Siamese 的 0/1 標籤 (0: Replicate, 1: Condition)
             
             output1 = model.forward_one(input1)
             output2 = model.forward_one(input2)
@@ -55,7 +58,7 @@ def test_triplet_by_siamese(model, dataloader, device):
 
     return np.array(distances), np.array(labels)
 
-def calculate_metrics(distances, labels, set_name="test"):
+def calculate_metrics(distances, labels):
     """
     計算分離指數 (Separation Index) 與平均表現 (Mean Performance)
     """
@@ -78,11 +81,11 @@ def calculate_metrics(distances, labels, set_name="test"):
     idx = np.where(np.diff(np.sign(diff)))[0]
     intersect = bin_edges[idx[0]] if len(idx) > 0 else bin_edges[len(bin_edges)//2]
 
-    # 2. 計算分離指數 (Separation Index) - 論文定義 
+    # 2. 計算分離指數 (Separation Index)
     overlap = minimum(rep_density, cond_density)
     separation_index = 1 - simpson(overlap, x=bin_centers)
 
-    # 3. 計算正確率 - 論文定義 
+    # 3. 計算正確率
     replicate_correct = np.sum(rep_dist < intersect)
     condition_correct = np.sum(cond_dist >= intersect)
     
@@ -91,8 +94,6 @@ def calculate_metrics(distances, labels, set_name="test"):
     mean_perf = (rep_rate + cond_rate) / 2
 
     return {
-        "distances": distances,
-        "labels": labels,
         "intersect": intersect,
         "rep_rate": rep_rate,
         "cond_rate": cond_rate,
@@ -110,7 +111,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 state_dict = torch.load(args.model_infile, map_location=device, weights_only=True)
 
-# 處理 DataParallel 的 module. 前綴
+# 處理 DataParallel 的 module. 前綴問題
 new_state_dict = OrderedDict()
 for k, v in state_dict.items():
     name = k.replace("module.", "")
@@ -120,24 +121,29 @@ model.load_state_dict(new_state_dict)
 with open(args.json_file) as f:
     dataset_config = json.load(f)
 
+# 獲取模型檔案所在的資料夾路徑與基礎檔名
+model_dir = os.path.dirname(args.model_infile)
+model_base_name = os.path.basename(args.model_infile).split('.ckpt')[0]
+
 results = {}
+
+# 定義字體與繪圖參數
+TITLE_SIZE, LABEL_SIZE = 14, 12
 
 # 分別測試 Train/Val (合併) 與 Test
 for subset in ["train_val", "test"]:
     print(f"--- Processing {subset} set ---")
     
     # 建立路徑列表
+    paths = []
     if subset == "train_val":
-        paths = []
         for d in args.data_inputs:
             paths.extend(dataset_config[d]["training"] + dataset_config[d]["validation"])
     else:
-        paths = []
         for d in args.data_inputs:
             paths.extend(dataset_config[d]["test"])
 
     # 建立 Siamese 資料集
-    # 標籤 0 為 replicates，1 為 conditions [cite: 745]
     ds = GroupedHiCDataset([
         SiameseHiCDataset(
             [HiCDatasetDec.load(p) for p in paths],
@@ -146,67 +152,64 @@ for subset in ["train_val", "test"]:
     ])
     
     loader = DataLoader(ds, batch_size=100, sampler=SequentialSampler(ds))
+    
+    # 執行距離測試
     dist, lbl = test_triplet_by_siamese(model, loader, device)
     
-    results[subset] = calculate_metrics(dist, lbl, subset)
+    # 計算指標
+    data = calculate_metrics(dist, lbl)
+    results[subset] = data
 
-# ---------------------------------------------------------
-# 繪圖與存檔 (優化標題與字體版本)
-# ---------------------------------------------------------
-# 從路徑中提取不含後綴的基礎檔名 (例如: TripletLeNet_0.01_128_42_1.0_best)
-# ---------------------------------------------------------
-# 繪圖與存檔 (優化路徑處理)
-# ---------------------------------------------------------
-# 1. 提取路徑資訊
-model_dir = os.path.dirname(args.model_infile)  # 獲取模型檔案所在的資料夾路徑
-model_base_name = os.path.basename(args.model_infile).split('.ckpt')[0] # 獲取檔名（不含路徑與後綴）
-
-# 定義字體大小
-TITLE_SIZE = 14
-LABEL_SIZE = 12
-TICK_SIZE = 10
-LEGEND_SIZE = 10
-
-for subset, data in results.items():
+    # ---------------------------------------------------------
+    # 繪圖 1: Distance Distribution Histogram
+    # ---------------------------------------------------------
     a, b, rng = data["hist_data"]
     plt.figure(figsize=(9, 7))
+    plt.hist(dist[lbl == 0], bins=rng, density=True, label='replicates', alpha=0.5, color='#108690')
+    plt.hist(dist[lbl == 1], bins=rng, density=True, label='conditions', alpha=0.5, color='#1D1E4E')
+    plt.axvline(data["intersect"], color='k', linestyle='--', label=f'Threshold: {data["intersect"]:.2f}')
     
-    # 繪製分配圖
-    plt.hist(data["distances"][data["labels"] == 0], bins=rng, density=True, 
-             label='replicates', alpha=0.5, color='#108690')
-    plt.hist(data["distances"][data["labels"] == 1], bins=rng, density=True, 
-             label='conditions', alpha=0.5, color='#1D1E4E')
-    
-    # 閾值虛線
-    plt.axvline(data["intersect"], color='k', linestyle='--', 
-                label=f'Threshold: {data["intersect"]:.2f}')
-    
-    # 標題與標籤
-    full_title = f"Distance Distribution ({subset})\nModel Params: {model_base_name}\nSeparation Index: {data['sep_index']:.4f}"
+    full_title = f"Distance Distribution ({subset})\nSI: {data['sep_index']:.4f} | Model: {model_base_name}"
     plt.title(full_title, fontsize=TITLE_SIZE, fontweight='bold', pad=15)
     plt.xlabel("Euclidean Distance", fontsize=LABEL_SIZE)
     plt.ylabel("Probability Density", fontsize=LABEL_SIZE)
-    plt.xticks(fontsize=TICK_SIZE)
-    plt.yticks(fontsize=TICK_SIZE)
-    plt.legend(fontsize=LEGEND_SIZE, loc='upper right')
+    plt.legend(loc='upper right')
     plt.grid(axis='y', linestyle='--', alpha=0.3)
-    plt.tight_layout()
     
-    # 關鍵修改：將 PDF 儲存在模型相同的資料夾
-    save_fig_name = f"{model_base_name}_{subset}_distribution.pdf"
-    save_fig_path = os.path.join(model_dir, save_fig_name) 
-    
-    plt.savefig(save_fig_path, bbox_inches='tight')
+    dist_fig_path = os.path.join(model_dir, f"{model_base_name}_{subset}_distribution.pdf")
+    plt.savefig(dist_fig_path, bbox_inches='tight')
     plt.close()
-    print(f"Saved plot: {save_fig_path}")
+    print(f"Saved Distribution Plot: {dist_fig_path}")
+
+    # ---------------------------------------------------------
+    # 繪圖 2: t-SNE Embedding Space Visualization
+    # ---------------------------------------------------------
+    print(f"Generating t-SNE for {subset}...")
+    test_embeddings = []
+    model.eval()
+    with torch.no_grad():
+        for i, batch_data in enumerate(loader):
+            # 取每一對中的第一張圖作為特徵點
+            img = batch_data[0].to(device)
+            emb = model.forward_one(img)
+            test_embeddings.extend(emb.cpu().numpy())
+            if len(test_embeddings) >= 2000: break # 限制採樣數以加快速度
+
+    tsne_res = TSNE(n_components=2, random_state=42).fit_transform(np.array(test_embeddings))
+    plt.figure(figsize=(10, 8))
+    plt.scatter(tsne_res[:, 0], tsne_res[:, 1], alpha=0.6, s=15, color='#108690')
+    plt.title(f"Test Set Embedding Space ({subset})\n{model_base_name}", fontsize=TITLE_SIZE)
+    plt.xlabel("t-SNE Dim 1"); plt.ylabel("t-SNE Dim 2")
+    
+    tsne_fig_path = os.path.join(model_dir, f"{model_base_name}_{subset}_tsne.pdf")
+    plt.savefig(tsne_fig_path, bbox_inches='tight')
+    plt.close()
+    print(f"Saved t-SNE Plot: {tsne_fig_path}")
 
 # ---------------------------------------------------------
-# 輸出 CSV (優化路徑處理)
+# 輸出 CSV 統計總表
 # ---------------------------------------------------------
-# 關鍵修改：將 CSV 儲存在模型相同的資料夾
-summary_name = f"{model_base_name}_summary.csv"
-summary_path = os.path.join(model_dir, summary_name)
-
+summary_path = os.path.join(model_dir, f"{model_base_name}_summary.csv")
 summary_df = pd.DataFrame({
     "set": results.keys(),
     "replicate_rate": [r["rep_rate"] for r in results.values()],
@@ -216,4 +219,4 @@ summary_df = pd.DataFrame({
 }).round(4)
 
 summary_df.to_csv(summary_path, index=False)
-print(f"Saved summary: {summary_path}")
+print(f"Saved All Results to: {summary_path}")
