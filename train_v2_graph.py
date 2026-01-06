@@ -241,7 +241,12 @@ scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1],
 
 # 圖例名稱處理
 unique_l = np.unique(labels[:len(tsne_res)])
-names = [args.data_inputs[int(i)] if int(i) < len(args.data_inputs) else f"ID {int(i)}" for i in unique_l]
+id_to_name = {
+    1: "NIPBL",
+    2: "TAM"
+}
+
+names = [id_to_name.get(int(i), f"ID {int(i)}") for i in unique_l]
 
 plt.legend(handles=scatter.legend_elements()[0], labels=names, title="Biological Sources", fontsize=10)
 
