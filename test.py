@@ -182,67 +182,57 @@ for subset in ["train_val", "test"]:
     print(f"Saved Distribution Plot: {dist_fig_path}")
 
     # ---------------------------------------------------------
-    # 繪圖 2: t-SNE Embedding Space Visualization (雙色優化版)
+    # 4 色優化版: 區分 Replicates (R1/R2) 與 Conditions
     # ---------------------------------------------------------
-    print(f"Generating Colored t-SNE for {subset} (TAM vs NIPBL)...")
+    print(f"Generating 4-color t-SNE for {subset} (R1 vs R2 vs Conditions)...")
     from matplotlib.colors import ListedColormap
     
-    test_embeddings, test_labels = [], []
+    test_embeddings, detailed_labels = [], []
     model.eval()
     
-    # 為了確保標籤正確，我們直接從原始 dataset 中取樣
-    # 建立一個臨時的單一讀取器來獲取類別標籤
-    temp_ds = GroupedHiCDataset([HiCDatasetDec.load(p) for p in paths])
-    temp_loader = DataLoader(temp_ds, batch_size=64, shuffle=True)
-
-    with torch.no_grad():
-        for i, batch in enumerate(temp_loader):
-            img = batch[0].to(device)
-            
-            # 修正這裡：使用 batch[-1] 確保抓到最後一個元素 (即 class_id)
-            lbl = batch[-1].to(device) 
-            
-            emb = model.forward_one(img)
-            test_embeddings.extend(emb.cpu().numpy())
-            test_labels.extend(lbl.cpu().numpy())
-            
+    # 建立一個包含路徑資訊的 Dataset
+    for p in paths:
+        temp_ds = HiCDatasetDec.load(p)
+        temp_loader = DataLoader(temp_ds, batch_size=128, shuffle=True)
+        
+        # 判斷是 R1 還是 R2 (根據你的檔名，例如路徑包含 'R1' 或 'R2')
+        is_r2 = 1 if ('R2' in p or 'rep2' in p) else 0
+        
+        with torch.no_grad():
+            for i, batch in enumerate(temp_loader):
+                img = batch[0].to(device)
+                class_id = batch[-1].item() # 1=NIPBL, 2=TAM
+                
+                # 合併標籤: 
+                # 1: NIPBL_R1, 2: NIPBL_R2, 3: TAM_R1, 4: TAM_R2
+                if class_id == 1: # NIPBL
+                    final_lbl = 1 if is_r2 == 0 else 2
+                else: # TAM
+                    final_lbl = 3 if is_r2 == 0 else 4
+                
+                emb = model.forward_one(img)
+                test_embeddings.extend(emb.cpu().numpy())
+                detailed_labels.append(final_lbl)
+                
+                if len(test_embeddings) >= 5000: break
             if len(test_embeddings) >= 5000: break
 
     # 執行 t-SNE
-    tsne_res = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42).fit_transform(np.array(test_embeddings))
+    tsne_res = TSNE(n_components=2, random_state=42).fit_transform(np.array(test_embeddings))
     
-    # 設定紅藍配色：ID 1 (NIPBL) -> 藍色, ID 2 (TAM) -> 紅色
-    custom_colors = ['#1F77B4', '#D62728'] 
+    # 配色方案: 藍/淺藍 (NIPBL), 紅/橘紅 (TAM)
+    custom_colors = ['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'] 
     my_cmap = ListedColormap(custom_colors)
     
-    plt.figure(figsize=(11, 9))
+    plt.figure(figsize=(12, 9))
     scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], 
-                          c=test_labels, 
-                          cmap=my_cmap, 
-                          s=25, 
-                          alpha=0.8, 
-                          edgecolors='white', 
-                          linewidths=0.3)
+                          c=detailed_labels, cmap=my_cmap, s=20, alpha=0.7)
 
-    # 建立正確的圖例名稱 (1: NIPBL, 2: TAM)
-    unique_l = np.unique(test_labels)
-    id_to_name = {1: "NIPBL", 2: "TAM"}
-    names = [id_to_name.get(int(i), f"ID {int(i)}") for i in unique_l]
+    # 修改圖例
+    legend_labels = ["NIPBL R1", "NIPBL R2", "TAM R1", "TAM R2"]
+    plt.legend(handles=scatter.legend_elements()[0], labels=legend_labels, title="Samples")
     
-    plt.legend(handles=scatter.legend_elements()[0], labels=names, title="Cell Lines", fontsize=10)
-
-    # 在標題加入詳細參數資訊
-    full_title = f"t-SNE Embedding Space ({subset})\n" \
-                 f"Model: {args.model_name} | Margin: 0.5 | Set: {subset}"
-    plt.title(full_title, fontsize=TITLE_SIZE, fontweight='bold', pad=15)
-    plt.xlabel("t-SNE Dim 1", fontsize=LABEL_SIZE)
-    plt.ylabel("t-SNE Dim 2", fontsize=LABEL_SIZE)
-    plt.grid(True, linestyle='--', alpha=0.3)
-    
-    tsne_fig_path = os.path.join(model_dir, f"{model_base_name}_{subset}_tsne.pdf")
-    plt.savefig(tsne_fig_path, bbox_inches='tight')
-    plt.close()
-    print(f"Saved Colored t-SNE Plot: {tsne_fig_path}")
+    plt.title(f"Replicates vs Conditions Visibility ({subset})", fontsize=14, fontweight='bold')
 
 # ---------------------------------------------------------
 # 輸出 CSV 統計總表
