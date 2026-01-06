@@ -205,58 +205,82 @@ plt.title("Distance Distribution (Best Model)"); plt.legend()
 save_fig(fig_dist, '_dist_hist.png')
 
 # ---------------------------------------------------------
-# 4. Colored t-SNE (已確認 ID: 1=NIPBL, 2=TAM)
+# 4. Balanced 4-Color t-SNE (科學嚴謹修正版)
 # ---------------------------------------------------------
-print("Generating Colored t-SNE with TAM/NIPBL labels...")
+print("Generating Balanced 4-color t-SNE from raw validation files...")
 from matplotlib.colors import ListedColormap
 
-# 載入模型並設定為評估模式
-model.load_state_dict(torch.load(base_save_path + '_best.ckpt', weights_only=True))
+# 1. 蒐集所有驗證集路徑 (Raw Files)
+val_paths = []
+for data_name in args.data_inputs:
+    val_paths.extend(dataset_config[data_name]["validation"])
+
+# 2. 載入訓練好的最佳模型
+model.load_state_dict(torch.load(base_save_path + '_best.ckpt', map_location=device))
 model.eval()
 
-embs, labels = [], []
+test_embeddings, detailed_labels = [], []
+# 目標 5000 點，平均分配到每個原始檔案
+samples_per_file = max(1, 5000 // len(val_paths))
+
 with torch.no_grad():
-    for data in val_loader:
-        # data[0] 是影像, data[3] 是 class_id
-        anchor, lbl = data[0].to(device), data[3].to(device)
-        out, _, _ = model(anchor, anchor, anchor)
-        embs.extend(out.cpu().numpy())
-        labels.extend(lbl.cpu().numpy())
-        if len(embs) >= 2000: break
+    for p in val_paths:
+        # 直接從 mlhic 均勻抽樣，避免 Triplet 配對偏誤
+        temp_ds = HiCDatasetDec.load(p)
+        temp_loader = DataLoader(temp_ds, batch_size=args.batch_size, shuffle=True)
+        
+        # 識別 R1/R2 (請確保你的檔名包含 'R2' 或 'rep2')
+        is_r2 = 1 if ('R2' in p or 'rep2' in p) else 0
+        file_count = 0
+        
+        for batch in temp_loader:
+            img = batch[0].to(device)
+            class_ids = batch[-1].cpu().numpy() # 原始 class_id (1=NIPBL, 2=TAM)
+            
+            # 提取特徵向量 (Embedding)
+            # 處理 DataParallel 的前綴問題
+            m = model.module if hasattr(model, 'module') else model
+            emb = m.forward_one(img)
+                
+            test_embeddings.extend(emb.cpu().numpy())
+            
+            for cid in class_ids:
+                if cid == 1: # NIPBL
+                    final_lbl = 1 if is_r2 == 0 else 2
+                else: # TAM
+                    final_lbl = 3 if is_r2 == 0 else 4
+                detailed_labels.append(final_lbl)
+            
+            file_count += len(class_ids)
+            if file_count >= samples_per_file: break
 
-# 執行 t-SNE 降維
-tsne_res = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=args.seed).fit_transform(np.array(embs))
+# 轉為 Numpy 並確保長度對齊
+test_embeddings = np.array(test_embeddings)[:5000]
+detailed_labels = np.array(detailed_labels)[:5000]
 
-# --- 設定紅藍配色 ---
-# ID 1 (NIPBL) -> 深藍 (#1F77B4), ID 2 (TAM) -> 鮮紅 (#D62728)
-custom_colors = ['#1F77B4', '#D62728'] 
+print(f"Calculating t-SNE for {len(test_embeddings)} balanced points...")
+tsne_res = TSNE(n_components=2, perplexity=30, max_iter=1000, random_state=args.seed).fit_transform(test_embeddings)
+
+# 3. 繪圖 (4 色方案)
+# 深藍(NIPBL R1), 淺藍(NIPBL R2), 深紅(TAM R1), 淺紅(TAM R2)
+custom_colors = ['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'] 
 my_cmap = ListedColormap(custom_colors)
 
-fig_tsne = plt.figure(figsize=(11, 9))
+fig_tsne = plt.figure(figsize=(12, 9))
 scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], 
-                      c=labels[:len(tsne_res)], 
-                      cmap=my_cmap, 
-                      s=25, 
-                      alpha=0.8, 
-                      edgecolors='white', 
-                      linewidths=0.3)
+                      c=detailed_labels, cmap=my_cmap, s=20, alpha=0.7, edgecolors='none')
 
-# --- 正確的名字映射 ---
-unique_l = np.unique(labels[:len(tsne_res)])
-id_to_name = {1: "NIPBL", 2: "TAM"} # 根據你的測試結果
-names = [id_to_name.get(int(i), f"ID {int(i)}") for i in unique_l]
+legend_labels = ["NIPBL R1", "NIPBL R2", "TAM R1", "TAM R2"]
+unique_ids = np.unique(detailed_labels).astype(int)
+handles, _ = scatter.legend_elements()
+plt.legend(handles=handles, labels=[legend_labels[i-1] for i in unique_ids], title="Samples")
 
-plt.legend(handles=scatter.legend_elements()[0], labels=names, title="Cell Lines", fontsize=10)
-
-# --- 加入參數資訊的標題 ---
-params_text = f"Model: {args.model_name} | LR: {args.learning_rate} | Margin: {args.margin} | BS: {args.batch_size}"
-plt.title(f"t-SNE Embedding Visualization (TAM vs NIPBL)\n{params_text}", 
+plt.title(f"Validation Embedding Space (Balanced Raw Sampling)\n{plot_title_base}", 
           fontsize=13, fontweight='bold', pad=15)
-plt.xlabel("t-SNE dimension 1")
-plt.ylabel("t-SNE dimension 2")
+plt.xlabel("t-SNE dimension 1"); plt.ylabel("t-SNE dimension 2")
 plt.grid(True, linestyle='--', alpha=0.3)
 
-save_fig(fig_tsne, '_tsne_colored.png')
-print(f"Plot saved to: {base_save_path}_tsne_colored.png")
+save_fig(fig_tsne, '_tsne_balanced_4color.png')
+print(f"Balanced t-SNE saved to: {base_save_path}_tsne_balanced_4color.png")
 
 print(f"\nTraining and Visualization Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")

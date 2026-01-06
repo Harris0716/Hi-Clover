@@ -180,7 +180,7 @@ for subset in ["train_val", "test"]:
     print(f"Successfully saved t-SNE Plot: {tsne_fig_path}")
 
 # ---------------------------------------------------------
-# 輸出 CSV (不包含 intersect)
+# 輸出 CSV 
 # ---------------------------------------------------------
 summary_df = pd.DataFrame(results)
 summary_df = summary_df[["set", "rep_rate", "cond_rate", "mean_perf", "sep_index"]]
