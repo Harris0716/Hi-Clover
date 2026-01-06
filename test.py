@@ -14,7 +14,7 @@ from collections import OrderedDict
 from sklearn.manifold import TSNE
 from matplotlib.colors import ListedColormap
 
-# 導入 Dataset 與模型定義
+# import Dataset and model definition
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset, GroupedHiCDataset
 import HiSiNet.models as models
 from HiSiNet.reference_dictionaries import reference_genomes
@@ -100,14 +100,14 @@ for subset in ["train_val", "test"]:
         for d in args.data_inputs:
             paths.extend(dataset_config[d]["test"])
 
-    # 1. 距離分佈測試 (Siamese Mode)
+    # 1. distance distribution test (Siamese Mode)
     ds = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(p) for p in paths], 
                             reference=reference_genomes[dataset_config[args.data_inputs[0]]["reference"]])])
     loader = DataLoader(ds, batch_size=100, sampler=SequentialSampler(ds))
     dist, lbl = test_triplet_by_siamese(model, loader, device)
     data = calculate_metrics(dist, lbl)
     
-    # 將數據加入結果列表 (移除 intersect 欄位)
+    # add data to result list (remove intersect field)
     results.append({
         "set": subset,
         "rep_rate": round(data["rep_rate"], 4),
@@ -116,13 +116,13 @@ for subset in ["train_val", "test"]:
         "sep_index": round(data["sep_index"], 4)
     })
 
-    # 繪製直方圖：保留 Threshold 標註
+    # plot histogram: retain Threshold annotation
     plt.figure(figsize=(9, 7))
     plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='replicates', alpha=0.5, color='#108690')
     plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='conditions', alpha=0.5, color='#1D1E4E')
     plt.axvline(data["intersect"], color='k', linestyle='--')
     
-    # 在圖上標註 Threshold 數值
+    # annotate Threshold value on the graph
     plt.text(data["intersect"]*1.05, plt.gca().get_ylim()[1]*0.9, f'Threshold: {data["intersect"]:.2f}', 
              fontweight='bold', fontsize=10)
     
@@ -132,7 +132,7 @@ for subset in ["train_val", "test"]:
     plt.savefig(os.path.join(model_dir, f"{model_base_name}_{subset}_distribution.pdf"), bbox_inches='tight')
     plt.close()
 
-    # 2. 平衡 4 色 t-SNE 視覺化
+    # 2. balanced 4-color t-SNE visualization
     print(f"Generating Balanced 4-color t-SNE for {subset}...")
     test_embeddings, detailed_labels = [], []
     samples_per_file = max(1, 5000 // len(paths))
@@ -146,7 +146,7 @@ for subset in ["train_val", "test"]:
             file_count = 0
             for i, batch in enumerate(temp_loader):
                 img, class_ids = batch[0].to(device), batch[-1].cpu().numpy()
-                emb = model.forward_one(img) # 提取 Anchor Embedding
+                emb = model.forward_one(img) # extract Anchor Embedding
                 test_embeddings.extend(emb.cpu().numpy())
                 for cid in class_ids:
                     if cid == 1: final_lbl = 1 if is_r2 == 0 else 2
@@ -180,7 +180,7 @@ for subset in ["train_val", "test"]:
     print(f"Successfully saved t-SNE Plot: {tsne_fig_path}")
 
 # ---------------------------------------------------------
-# 輸出 CSV 
+# output CSV
 # ---------------------------------------------------------
 summary_df = pd.DataFrame(results)
 summary_df = summary_df[["set", "rep_rate", "cond_rate", "mean_perf", "sep_index"]]
