@@ -204,23 +204,35 @@ plt.hist(best_d_an_dist, bins=50, alpha=0.6, label='Negative d(a,n)', color='r',
 plt.title("Distance Distribution (Best Model)"); plt.legend()
 save_fig(fig_dist, '_dist_hist.png')
 
+# ---------------------------------------------------------
 # 4. Colored t-SNE
+# ---------------------------------------------------------
 print("Generating Colored t-SNE...")
+# 加上 weights_only=True 消除警告
 model.load_state_dict(torch.load(base_save_path + '_best.ckpt', weights_only=True))
 model.eval()
+
 embs, labels = [], []
 with torch.no_grad():
     for data in val_loader:
+        # data[0] 是影像, data[3] 是 class_id 標籤
         anchor, lbl = data[0].to(device), data[3].to(device)
         out, _, _ = model(anchor, anchor, anchor)
-        embs.extend(out.cpu().numpy()); labels.extend(lbl.cpu().numpy())
+        embs.extend(out.cpu().numpy())
+        labels.extend(lbl.cpu().numpy())
         if len(embs) >= 2000: break
 
 tsne_res = TSNE(n_components=2, random_state=args.seed).fit_transform(np.array(embs))
 fig_tsne = plt.figure(figsize=(10, 8))
 scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], c=labels[:len(tsne_res)], cmap='tab10', s=15, alpha=0.7)
+
+# --- 最簡化防錯修正 ---
 unique_l = np.unique(labels[:len(tsne_res)])
-plt.legend(handles=scatter.legend_elements()[0], labels=[args.data_inputs[int(i)] for i in unique_l], title="Sources")
-plt.title("Colored t-SNE Visualization"); save_fig(fig_tsne, '_tsne_colored.png')
+# 如果 ID 沒名字就顯示 "ID x"，這樣絕對不會報 index out of range
+names = [args.data_inputs[int(i)] if int(i) < len(args.data_inputs) else f"ID {int(i)}" for i in unique_l]
+
+plt.legend(handles=scatter.legend_elements()[0], labels=names, title="Sources")
+plt.title("Colored t-SNE Visualization")
+save_fig(fig_tsne, '_tsne_colored.png')
 
 print(f"\nTraining and Visualization Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
