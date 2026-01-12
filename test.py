@@ -13,13 +13,7 @@ from numpy import minimum
 from collections import OrderedDict
 from sklearn.manifold import TSNE
 from matplotlib.colors import ListedColormap
-
-# 嘗試匯入 umap
-try:
-    import umap
-except ImportError:
-    print("Warning: umap-learn not installed. Please run 'pip install umap-learn'")
-    umap = None
+import umap
 
 # 匯入自定義模組
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset, GroupedHiCDataset
@@ -196,15 +190,15 @@ for subset in ["train_val", "test"]:
     plt.close()
 
     # UMAP Plot
-    if umap:
-        print(f"Calculating UMAP ({subset})...")
-        res_umap = umap.UMAP(random_state=42).fit_transform(test_embeddings)
-        plt.figure(figsize=(10, 8))
-        scatter = plt.scatter(res_umap[:, 0], res_umap[:, 1], c=detailed_labels, cmap=cmap, s=20, alpha=0.7)
-        plt.legend(handles=scatter.legend_elements()[0], labels=lgd_labels, title="Samples")
-        plt.title(f"Latent Space Visualization (UMAP) - {subset.upper()}", fontsize=14, fontweight='bold')
-        plt.savefig(os.path.join(model_dir, f"{model_base_name}_{subset}_umap.pdf"), bbox_inches='tight')
-        plt.close()
+    
+    print(f"Calculating UMAP ({subset})...")
+    res_umap = umap.UMAP(random_state=42).fit_transform(test_embeddings)
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(res_umap[:, 0], res_umap[:, 1], c=detailed_labels, cmap=cmap, s=20, alpha=0.7)
+    plt.legend(handles=scatter.legend_elements()[0], labels=lgd_labels, title="Samples")
+    plt.title(f"Latent Space Visualization (UMAP) - {subset.upper()}", fontsize=14, fontweight='bold')
+    plt.savefig(os.path.join(model_dir, f"{model_base_name}_{subset}_umap.pdf"), bbox_inches='tight')
+    plt.close()
 
 # ---------------------------------------------------------
 # Output Metrics
