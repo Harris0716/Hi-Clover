@@ -15,28 +15,30 @@ from HiSiNet.reference_dictionaries import reference_genomes
 # ---------------------------------------------------------
 # Argument Parser
 # ---------------------------------------------------------
-parser = argparse.ArgumentParser(description='Triplet network training for liver data')
-parser.add_argument('model_name', type=str)
-parser.add_argument('json_file', type=str)
-parser.add_argument('learning_rate', type=float)
-parser.add_argument('--batch_size', type=int, default=128)
-parser.add_argument('--epoch_training', type=int, default=100)
-parser.add_argument('--epoch_enforced_training', type=int, default=20)
-parser.add_argument('--outpath', type=str, default="outputs/")
-parser.add_argument('--seed', type=int, default=42)
-parser.add_argument('--mask', type=bool, default=True)
-parser.add_argument('--margin', type=float, default=1.0)
-parser.add_argument('--weight_decay', type=float, default=1e-4)
-parser.add_argument("data_inputs", nargs='+')
-args = parser.parse_args()
+parser = argparse.ArgumentParser(description='Triplet network training for Hi-C Replicate Analysis')
+parser.add_argument('model_name', type=str, help='Model from models.py')
+parser.add_argument('json_file', type=str, help='JSON dictionary with file paths')
+parser.add_argument('learning_rate', type=float, help='Learning rate')
+parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
+parser.add_argument('--epoch_training', type=int, default=100, help='Max epochs')
+parser.add_argument('--epoch_enforced_training', type=int, default=20, help='Enforced epochs')
+parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
+parser.add_argument('--seed', type=int, default=42, help='Random seed')
+parser.add_argument('--mask', type=bool, default=True, help='Mask diagonal')
+parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
+parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for AdamW')
+parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
+args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
+
+# device setting
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-# --- 標題設置 ---
-cell_line = "liver data"
+# --- 標題設置 (直接從 data_inputs 抓取名稱) ---
+cell_line = args.data_inputs[0] + " data"
 param_title = (f"Cell Line: {cell_line} | Model: {args.model_name} | Seed: {args.seed} | LR: {args.learning_rate}\n"
                f"BS: {args.batch_size} | Margin: {args.margin} | WD: {args.weight_decay}")
 
@@ -66,7 +68,6 @@ criterion = TripletLoss(margin=args.margin)
 optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_training)
 
-# Stats
 best_val_loss, prev_val_loss = float('inf'), float('inf')
 train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
 
@@ -89,11 +90,12 @@ for epoch in range(args.epoch_training):
         e_norms.append(nn.utils.clip_grad_norm_(model.parameters(), 1.0).item())
         optimizer.step()
         running_loss += loss.item()
+        
         if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
             with torch.no_grad():
                 dap = F.pairwise_distance(ao, po).mean().item()
                 dan = F.pairwise_distance(ao, no).mean().item()
-            # 保持原始 log 訊息
+            # 保留原本 Log 訊息格式
             print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {dap:.4f}, d(a,n): {dan:.4f}")
 
     model.eval()
@@ -116,6 +118,7 @@ for epoch in range(args.epoch_training):
 
     # 修正 Time 格式問題
     print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
+    
     if avg_v < best_val_loss:
         best_val_loss = avg_v
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
@@ -125,9 +128,6 @@ for epoch in range(args.epoch_training):
     if epoch >= args.epoch_enforced_training and avg_v > 1.1 * prev_val_loss: break
     prev_val_loss = avg_v
 
-# ---------------------------------------------------------
-# Visualizations
-# ---------------------------------------------------------
 def save_fig(fig, suffix):
     plt.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(base_save_path + suffix, dpi=300); plt.close(fig)
 

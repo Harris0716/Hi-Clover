@@ -9,16 +9,17 @@ from numpy import minimum
 from collections import OrderedDict
 from sklearn.manifold import TSNE
 from matplotlib.colors import ListedColormap
-try:
-    import umap
-except ImportError:
-    umap = None
+import umap
 
+# 匯入自定義模組
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset, GroupedHiCDataset
 import HiSiNet.models as models
 from HiSiNet.reference_dictionaries import reference_genomes
 
-parser = argparse.ArgumentParser(description='Triplet Network Evaluation for liver data')
+# ---------------------------------------------------------
+# Argument Parser
+# ---------------------------------------------------------
+parser = argparse.ArgumentParser(description='Latent Space Evaluation and Visualization')
 parser.add_argument('model_name', type=str)
 parser.add_argument('json_file', type=str)
 parser.add_argument('model_infile', type=str)
@@ -58,10 +59,20 @@ model.load_state_dict(OrderedDict([(k.replace("module.", ""), v) for k, v in sd.
 with open(args.json_file) as f: dataset_config = json.load(f)
 m_dir, m_base = os.path.dirname(args.model_infile), os.path.basename(args.model_infile).split('.ckpt')[0]
 
-cell_line = "liver data"
+# --- 直接使用 data_inputs 的名稱決定標籤與標題 ---
+cell_name = args.data_inputs[0]
+cell_title = cell_name
+
+if "NPC" in cell_name.upper():
+    lgd = ["NPC Ctrl R1", "NPC Ctrl R2", "NPC Treat R1", "NPC Treat R2"]
+elif "NIPBL" in cell_name.upper():
+    lgd = ["NIPBL R1", "NIPBL R2", "TAM R1", "TAM R2"]
+else:
+    lgd = [f"{cell_name} R1", f"{cell_name} R2", "Treat R1", "Treat R2"]
+
 param_title = m_base.replace('_best', '').replace('_', ' | ')
 
-print("Step 1: Calibrating Threshold from Validation...")
+print(f"Step 1: Calibrating Threshold from Validation ({cell_name})...")
 val_paths = [p for d in args.data_inputs for p in dataset_config[d]["validation"]]
 v_ds = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(p) for p in val_paths], 
                         reference=reference_genomes[dataset_config[args.data_inputs[0]]["reference"]])])
@@ -79,16 +90,16 @@ for subset in ["train_val", "test"]:
     data = calculate_metrics(dist, lbl, fixed_threshold=fixed_threshold)
     results.append({"set": subset, "rep_rate": data["rep_rate"], "cond_rate": data["cond_rate"], "sep_index": data["sep_index"]})
 
-    # 直方圖
+    # 距離直方圖 
     plt.figure(figsize=(9, 6))
     plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Technical Replicates', alpha=0.5, color='#108690')
     plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Biological Conditions', alpha=0.5, color='#1D1E4E')
     plt.axvline(fixed_threshold, color='k', ls='--', label=f'Threshold ({fixed_threshold:.2f})')
-    plt.title(f"Distance Distribution ({subset}) | {cell_line}\nSI: {data['sep_index']:.4f} | Threshold: {fixed_threshold:.2f}", fontweight='bold')
-    plt.xlabel("Euclidean Distance"); plt.legend()
+    plt.title(f"Distance Distribution ({subset}) | {cell_title}\nSI: {data['sep_index']:.4f} | Threshold: {fixed_threshold:.2f}", fontweight='bold')
+    plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
 
-    # 降維取樣
+    # 採樣
     embs, detailed_lbls = [], []
     samples_per_file = max(1, 5000 // len(paths))
     with torch.no_grad():
@@ -109,26 +120,26 @@ for subset in ["train_val", "test"]:
 
     embs, detailed_lbls = np.array(embs), np.array(detailed_lbls)
     cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
-    lgd = ["NPC Ctrl R1", "NPC Ctrl R2", "NPC Treat R1", "NPC Treat R2"] # 更新名稱為 NPC
 
-    # 優化 t-SNE 參數
+    # t-SNE (點調小一點，s=10, alpha=0.5)
     print(f"Calculating t-SNE for {subset}...")
-    # 增加 perplexity 嘗試拉開間距
     res_tsne = TSNE(n_components=2, perplexity=60, random_state=42, early_exaggeration=15).fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
     plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
-    plt.title(f"Latent Space Visualization (t-SNE) - {subset.upper()} | {cell_line}\n{param_title}", fontweight='bold')
+    plt.title(f"Latent Space Visualization (t-SNE) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
 
-    # 優化 UMAP 參數
-    if umap:
-        print(f"Calculating UMAP for {subset}...")
-        # 增加 n_neighbors 和 min_dist
-        res_umap = umap.UMAP(random_state=42, n_neighbors=50, min_dist=0.4).fit_transform(embs)
-        plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
-        plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
-        plt.title(f"Latent Space Visualization (UMAP) - {subset.upper()} | {cell_line}\n{param_title}", fontweight='bold')
-        plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_umap.pdf"), bbox_inches='tight'); plt.close()
+    # UMAP
+    print(f"Calculating UMAP for {subset}...")
+    res_umap = umap.UMAP(random_state=42, n_neighbors=50, min_dist=0.4).fit_transform(embs)
+    plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
+    plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
+    plt.title(f"Latent Space Visualization (UMAP) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
+    plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_umap.pdf"), bbox_inches='tight'); plt.close()
 
-pd.DataFrame(results).to_csv(os.path.join(m_dir, f"{m_base}_performance_metrics.csv"), index=False)
-print("Evaluation Complete.")
+# ---------------------------------------------------------
+# Output Summary (CSV 保留四位小數)
+# ---------------------------------------------------------
+summary_df = pd.DataFrame(results)
+summary_df.to_csv(os.path.join(m_dir, f"{m_base}_performance_summary.csv"), index=False, float_format='%.4f')
+print(f"Evaluation Complete. CSV with 4-decimal precision saved for {cell_name}.")
