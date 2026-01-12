@@ -11,7 +11,6 @@ from sklearn.manifold import TSNE
 from matplotlib.colors import ListedColormap
 import umap
 
-# 匯入自定義模組
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset, GroupedHiCDataset
 import HiSiNet.models as models
 from HiSiNet.reference_dictionaries import reference_genomes
@@ -59,7 +58,6 @@ model.load_state_dict(OrderedDict([(k.replace("module.", ""), v) for k, v in sd.
 with open(args.json_file) as f: dataset_config = json.load(f)
 m_dir, m_base = os.path.dirname(args.model_infile), os.path.basename(args.model_infile).split('.ckpt')[0]
 
-# --- 直接使用 data_inputs 的名稱決定標籤與標題 ---
 cell_name = args.data_inputs[0]
 cell_title = cell_name
 
@@ -90,7 +88,7 @@ for subset in ["train_val", "test"]:
     data = calculate_metrics(dist, lbl, fixed_threshold=fixed_threshold)
     results.append({"set": subset, "rep_rate": data["rep_rate"], "cond_rate": data["cond_rate"], "sep_index": data["sep_index"]})
 
-    # 距離直方圖 
+    # hist
     plt.figure(figsize=(9, 6))
     plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Technical Replicates', alpha=0.5, color='#108690')
     plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Biological Conditions', alpha=0.5, color='#1D1E4E')
@@ -99,7 +97,7 @@ for subset in ["train_val", "test"]:
     plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
 
-    # 採樣
+    # sampling
     embs, detailed_lbls = [], []
     samples_per_file = max(1, 5000 // len(paths))
     with torch.no_grad():
@@ -121,7 +119,7 @@ for subset in ["train_val", "test"]:
     embs, detailed_lbls = np.array(embs), np.array(detailed_lbls)
     cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
 
-    # t-SNE (點調小一點，s=10, alpha=0.5)
+    # t-SNE 
     print(f"Calculating t-SNE for {subset}...")
     res_tsne = TSNE(n_components=2, perplexity=60, random_state=42, early_exaggeration=15).fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
@@ -138,7 +136,7 @@ for subset in ["train_val", "test"]:
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_umap.pdf"), bbox_inches='tight'); plt.close()
 
 # ---------------------------------------------------------
-# Output Summary (CSV 保留四位小數)
+# Output Summary 
 # ---------------------------------------------------------
 summary_df = pd.DataFrame(results)
 summary_df.to_csv(os.path.join(m_dir, f"{m_base}_performance_summary.csv"), index=False, float_format='%.4f')

@@ -37,7 +37,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-# --- 標題設置 (直接從 data_inputs 抓取名稱) ---
+# --- title setting  ---
 cell_line = args.data_inputs[0] + " data"
 param_title = (f"Cell Line: {cell_line} | Model: {args.model_name} | Seed: {args.seed} | LR: {args.learning_rate}\n"
                f"BS: {args.batch_size} | Margin: {args.margin} | WD: {args.weight_decay}")
@@ -95,7 +95,6 @@ for epoch in range(args.epoch_training):
             with torch.no_grad():
                 dap = F.pairwise_distance(ao, po).mean().item()
                 dan = F.pairwise_distance(ao, no).mean().item()
-            # 保留原本 Log 訊息格式
             print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {dap:.4f}, d(a,n): {dan:.4f}")
 
     model.eval()
@@ -116,7 +115,6 @@ for epoch in range(args.epoch_training):
     train_losses.append(running_loss / len(train_loader))
     grad_norm_history.append(np.mean(e_norms))
 
-    # 修正 Time 格式問題
     print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
     
     if avg_v < best_val_loss:
