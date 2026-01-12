@@ -46,18 +46,24 @@ class TripletLeNet(TripletNet):
             nn.Linear(16 * 61 * 61, 120),
             nn.GELU(),
             nn.Linear(120, 83),
-            nn.GELU(),
         )
+        
+        # 加入權重初始化，幫助模型初期拉開距離
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def forward_one(self, x):
         x = self.mask_data(x)
         x = self.features(x)
         x = x.view(x.size(0), -1) 
         x = self.linear(x)
-        return F.normalize(x, p=2, dim=1)  # L2 norm
-
-    def forward(self, anchor, positive, negative):
-        return self.forward_one(anchor), self.forward_one(positive), self.forward_one(negative)
+        return F.normalize(x, p=2, dim=1)
 
 # resnet
 class TripletResNet(nn.Module):
