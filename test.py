@@ -13,27 +13,18 @@ from numpy import minimum
 from collections import OrderedDict
 from sklearn.manifold import TSNE
 from matplotlib.colors import ListedColormap
-
-# import Dataset and model definition
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, SiameseHiCDataset, GroupedHiCDataset
 import HiSiNet.models as models
 from HiSiNet.reference_dictionaries import reference_genomes
 
-# ---------------------------------------------------------
-# Argument Parser
-# ---------------------------------------------------------
 parser = argparse.ArgumentParser(description='Triplet network testing module')
 parser.add_argument('model_name', type=str, help='Model name from models.py')
 parser.add_argument('json_file', type=str, help='JSON file containing data paths')
 parser.add_argument('model_infile', type=str, help='Path to the trained .ckpt file')
-parser.add_argument('--mask', type=bool, default=True, help='Mask diagonal (default: True)')
+parser.add_argument('--mask', type=bool, default=True, help='Mask diagonal')
 parser.add_argument("data_inputs", nargs='+', help="Keys for testing datasets")
-
 args = parser.parse_args()
 
-# ---------------------------------------------------------
-# Helper Functions
-# ---------------------------------------------------------
 def test_triplet_by_siamese(model, dataloader, device):
     distances, labels = [], []
     model.eval()
@@ -47,7 +38,7 @@ def test_triplet_by_siamese(model, dataloader, device):
             labels.extend(label.numpy())
     return np.array(distances), np.array(labels)
 
-def calculate_metrics(distances, labels):
+def calculate_metrics(distances, labels, fixed_threshold=None):
     mx = np.percentile(distances, 99.5) 
     mn = distances.min()
     rng = np.linspace(mn, mx, 200)
@@ -58,9 +49,14 @@ def calculate_metrics(distances, labels):
     rep_density, cond_density = a[0], b[0]
     bin_edges = a[1]
     bin_centers = (bin_edges[1:] + bin_edges[:-1]) / 2
-    diff = rep_density - cond_density
-    idx = np.where(np.diff(np.sign(diff)))[0]
-    intersect = bin_edges[idx[0]] if len(idx) > 0 else bin_edges[len(bin_edges)//2]
+
+    if fixed_threshold is None:
+        diff = rep_density - cond_density
+        idx = np.where(np.diff(np.sign(diff)))[0]
+        intersect = bin_edges[idx[0]] if len(idx) > 0 else bin_edges[len(bin_edges)//2]
+    else:
+        intersect = fixed_threshold
+
     overlap = minimum(rep_density, cond_density)
     separation_index = 1 - simpson(overlap, x=bin_centers)
     rep_rate = np.sum(rep_dist < intersect) / len(rep_dist)
@@ -74,9 +70,6 @@ def calculate_metrics(distances, labels):
         "hist_data": (a, b, rng)
     }
 
-# ---------------------------------------------------------
-# Main Execution
-# ---------------------------------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 state_dict = torch.load(args.model_infile, map_location=device, weights_only=True)
@@ -88,8 +81,22 @@ with open(args.json_file) as f:
 
 model_dir = os.path.dirname(args.model_infile)
 model_base_name = os.path.basename(args.model_infile).split('.ckpt')[0]
-results = []
 
+# --- 第一步：先用 Validation 決定 Intersect ---
+print("Calculating fixed threshold from Validation data...")
+val_paths = []
+for d in args.data_inputs:
+    val_paths.extend(dataset_config[d]["validation"])
+val_ds = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(p) for p in val_paths], 
+                            reference=reference_genomes[dataset_config[args.data_inputs[0]]["reference"]])])
+val_loader = DataLoader(val_ds, batch_size=100, sampler=SequentialSampler(val_ds))
+val_dist, val_lbl = test_triplet_by_siamese(model, val_loader, device)
+val_metrics = calculate_metrics(val_dist, val_lbl)
+fixed_threshold = val_metrics["intersect"]
+print(f"Fixed Threshold (from Val): {fixed_threshold:.4f}")
+
+# --- 第二步：執行正式測試迴圈 ---
+results = []
 for subset in ["train_val", "test"]:
     print(f"--- Processing {subset} set ---")
     paths = []
@@ -100,14 +107,14 @@ for subset in ["train_val", "test"]:
         for d in args.data_inputs:
             paths.extend(dataset_config[d]["test"])
 
-    # 1. distance distribution test (Siamese Mode)
     ds = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(p) for p in paths], 
                             reference=reference_genomes[dataset_config[args.data_inputs[0]]["reference"]])])
     loader = DataLoader(ds, batch_size=100, sampler=SequentialSampler(ds))
     dist, lbl = test_triplet_by_siamese(model, loader, device)
-    data = calculate_metrics(dist, lbl)
     
-    # add data to result list (remove intersect field)
+    # 強制傳入 fixed_threshold
+    data = calculate_metrics(dist, lbl, fixed_threshold=fixed_threshold)
+    
     results.append({
         "set": subset,
         "rep_rate": round(data["rep_rate"], 4),
@@ -116,27 +123,19 @@ for subset in ["train_val", "test"]:
         "sep_index": round(data["sep_index"], 4)
     })
 
-    # plot histogram: retain Threshold annotation
     plt.figure(figsize=(9, 7))
     plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='replicates', alpha=0.5, color='#108690')
     plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='conditions', alpha=0.5, color='#1D1E4E')
-    plt.axvline(data["intersect"], color='k', linestyle='--')
-    
-    # annotate Threshold value on the graph
-    plt.text(data["intersect"]*1.05, plt.gca().get_ylim()[1]*0.9, f'Threshold: {data["intersect"]:.2f}', 
-             fontweight='bold', fontsize=10)
-    
+    plt.axvline(fixed_threshold, color='k', linestyle='--')
+    plt.text(fixed_threshold*1.05, plt.gca().get_ylim()[1]*0.9, f'Threshold: {fixed_threshold:.2f}', fontweight='bold')
     plt.title(f"Distance Distribution ({subset})\nSI: {data['sep_index']:.4f}", fontweight='bold')
-    plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density")
-    plt.legend(loc='upper right')
-    plt.savefig(os.path.join(model_dir, f"{model_base_name}_{subset}_distribution.pdf"), bbox_inches='tight')
+    plt.legend()
+    plt.savefig(os.path.join(model_dir, f"{model_base_name}_{subset}_distribution.pdf"))
     plt.close()
 
-    # 2. balanced 4-color t-SNE visualization
-    print(f"Generating Balanced 4-color t-SNE for {subset}...")
+    # t-SNE 部分 (保持原樣)
     test_embeddings, detailed_labels = [], []
     samples_per_file = max(1, 5000 // len(paths))
-    
     model.eval()
     with torch.no_grad():
         for p in paths:
@@ -146,7 +145,7 @@ for subset in ["train_val", "test"]:
             file_count = 0
             for i, batch in enumerate(temp_loader):
                 img, class_ids = batch[0].to(device), batch[-1].cpu().numpy()
-                emb = model.forward_one(img) # extract Anchor Embedding
+                emb = model.forward_one(img)
                 test_embeddings.extend(emb.cpu().numpy())
                 for cid in class_ids:
                     if cid == 1: final_lbl = 1 if is_r2 == 0 else 2
@@ -162,27 +161,14 @@ for subset in ["train_val", "test"]:
         test_embeddings, detailed_labels = test_embeddings[idx], detailed_labels[idx]
 
     tsne_res = TSNE(n_components=2, perplexity=30, max_iter=1000, random_state=42).fit_transform(test_embeddings)
-    
     plt.figure(figsize=(12, 9))
-    custom_colors = ['#1F77B4', '#AEC7E8', '#D62728', '#FF9896']
-    my_cmap = ListedColormap(custom_colors)
+    my_cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
     scatter = plt.scatter(tsne_res[:, 0], tsne_res[:, 1], c=detailed_labels, cmap=my_cmap, s=20, alpha=0.7)
-    
-    unique_ids = np.unique(detailed_labels).astype(int)
-    legend_map = {1: "NIPBL R1", 2: "NIPBL R2", 3: "TAM R1", 4: "TAM R2"}
-    handles, _ = scatter.legend_elements()
-    plt.legend(handles=handles, labels=[legend_map[i] for i in unique_ids], title="Samples", loc='best')
-    plt.title(f"Replicates vs Conditions Visibility ({subset})\n{model_base_name}", fontsize=14, fontweight='bold')
-    
-    tsne_fig_path = os.path.join(model_dir, f"{model_base_name}_{subset}_4color_tsne.pdf")
-    plt.savefig(tsne_fig_path, bbox_inches='tight')
+    plt.legend(handles=scatter.legend_elements()[0], labels=["NIPBL R1", "NIPBL R2", "TAM R1", "TAM R2"], title="Samples")
+    plt.title(f"Visibility ({subset})\n{model_base_name}")
+    plt.savefig(os.path.join(model_dir, f"{model_base_name}_{subset}_4color_tsne.pdf"))
     plt.close()
-    print(f"Successfully saved t-SNE Plot: {tsne_fig_path}")
 
-# ---------------------------------------------------------
-# output CSV
-# ---------------------------------------------------------
 summary_df = pd.DataFrame(results)
-summary_df = summary_df[["set", "rep_rate", "cond_rate", "mean_perf", "sep_index"]]
 summary_df.to_csv(os.path.join(model_dir, f"{model_base_name}_summary.csv"), index=False)
-print(f"All process completed. Summary saved to CSV without 'intersect'.")
+print("Process completed. Used Validation-fixed threshold for all sets.")
