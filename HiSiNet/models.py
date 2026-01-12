@@ -20,13 +20,16 @@ class TripletNet(nn.Module):
     def __init__(self, mask=False):
         super(TripletNet, self).__init__()
         if mask:
-            mask_array = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
+            mask_array = np.tril(np.ones((256, 256)), k=-3) + np.triu(np.ones((256, 256)), k=3)
             self.mask = nn.Parameter(torch.from_numpy(mask_array).float(), requires_grad=False)
 
     def mask_data(self, x):
         if hasattr(self, "mask"):
             return x * self.mask
         return x
+
+    def forward(self, anchor, positive, negative):
+        return self.forward_one(anchor), self.forward_one(positive), self.forward_one(negative)
 
 class TripletLeNet(TripletNet):
     def __init__(self, mask=False):
@@ -48,12 +51,11 @@ class TripletLeNet(TripletNet):
             nn.Linear(120, 83),
         )
         
-        # 加入權重初始化，幫助模型初期拉開距離
         self._initialize_weights()
 
     def _initialize_weights(self):
         for m in self.modules():
-            if isinstance(m, nn.Linear):
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
                 nn.init.xavier_uniform_(m.weight)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
