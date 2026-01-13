@@ -140,4 +140,4 @@ for subset in ["train_val", "test"]:
 # ---------------------------------------------------------
 summary_df = pd.DataFrame(results)
 summary_df.to_csv(os.path.join(m_dir, f"{m_base}_performance_summary.csv"), index=False, float_format='%.4f')
-print(f"Evaluation Complete. CSV with 4-decimal precision saved for {cell_name}.")
+print(f"Evaluation Complete. CSV saved for {cell_name}.")
