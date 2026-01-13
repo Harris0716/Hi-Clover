@@ -30,7 +30,7 @@ do
     echo "============================================================"
 
     # 執行 Python 整合腳本
-    python run_all.py $MODEL $CONFIG $LR $DATA \
+    python Hi-Clover/run_all.py $MODEL $CONFIG $LR $DATA \
         --batch_size $BS \
         --epoch_training $EPOCH \
         --epoch_enforced_training $ENFORCED \
