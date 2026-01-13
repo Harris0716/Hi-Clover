@@ -39,15 +39,15 @@ np.random.seed(args.seed)
 
 # --- 自定義 Cosine Triplet Loss ---
 class CosineTripletLoss(nn.Module):
-    def __init__(self, margin=0.5):
+    def __init__(self, margin=0.3, s=16.0): # 加入 scaling factor s
         super(CosineTripletLoss, self).__init__()
         self.margin = margin
+        self.s = s
         
     def forward(self, anchor, positive, negative):
-        # 距離定義為 1 - Cosine Similarity, 範圍 [0, 2]
-        d_ap = 1 - F.cosine_similarity(anchor, positive)
-        d_an = 1 - F.cosine_similarity(anchor, negative)
-        losses = F.relu(d_ap - d_an + self.margin)
+        sim_ap = F.cosine_similarity(anchor, positive)
+        sim_an = F.cosine_similarity(anchor, negative)
+        losses = F.relu(self.s * (sim_an - sim_ap + self.margin))
         return losses.mean()
 
 # --- title setting  ---
