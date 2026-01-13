@@ -32,11 +32,14 @@ def test_triplet(model, dataloader, device):
     with torch.no_grad():
         for data in dataloader:
             o1, o2 = model.forward_one(data[0].to(device)), model.forward_one(data[1].to(device))
-            distances.extend(F.pairwise_distance(o1, o2).cpu().numpy())
+            # 修改處：改用 Cosine Distance (1 - Cosine Similarity)
+            cos_sim = F.cosine_similarity(o1, o2)
+            distances.extend((1 - cos_sim).cpu().numpy())
             labels.extend(data[2].numpy())
     return np.array(distances), np.array(labels)
 
 def calculate_metrics(distances, labels, fixed_threshold=None):
+    # Cosine distance 範圍在 [0, 2]
     rng = np.linspace(distances.min(), np.percentile(distances, 99.5), 200)
     rep_dist, cond_dist = distances[labels == 0], distances[labels == 1]
     a, b = np.histogram(rep_dist, bins=rng, density=True), np.histogram(cond_dist, bins=rng, density=True)
@@ -96,7 +99,8 @@ for subset in ["train_val", "test"]:
     plt.axvline(fixed_threshold, color='k', ls='--', label=f'Threshold ({fixed_threshold:.2f})')
     # 加入 param_title 到標題中
     plt.title(f"Distance Distribution ({subset}) | {cell_title}\n{param_title}\nSI: {data['sep_index']:.4f} | Threshold: {fixed_threshold:.2f}", fontweight='bold')
-    plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
+    # 修改標籤為 Cosine Distance
+    plt.xlabel("Cosine Distance"); plt.ylabel("Probability Density"); plt.legend()
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
 
     # Sampling for visualization
@@ -121,15 +125,15 @@ for subset in ["train_val", "test"]:
     embs, detailed_lbls = np.array(embs), np.array(detailed_lbls)
     cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
 
-    # 2. t-SNE
+    # 2. t-SNE (修改處：增加 metric='cosine')
     print(f"Calculating t-SNE for {subset}...")
-    res_tsne = TSNE(n_components=2, perplexity=40, random_state=42, early_exaggeration=20).fit_transform(embs)
+    res_tsne = TSNE(n_components=2, perplexity=40, random_state=42, early_exaggeration=20, metric='cosine').fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
     plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
     plt.title(f"Latent Space Visualization (t-SNE) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
 
-    # 3. UMAP
+    # 3. UMAP (保持 metric='cosine')
     print(f"Calculating UMAP for {subset}...")
     res_umap = umap.UMAP(random_state=42, n_neighbors=80, min_dist=0.1, metric='cosine').fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
