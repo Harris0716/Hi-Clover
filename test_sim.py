@@ -94,13 +94,11 @@ for subset in ["train_val", "test"]:
 
     # 1. Histogram
     plt.figure(figsize=(9, 6))
-    plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Technical Replicates', alpha=0.5, color='#108690')
-    plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Biological Conditions', alpha=0.5, color='#1D1E4E')
+    plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Replicates', alpha=0.5, color='#108690')
+    plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Conditions', alpha=0.5, color='#1D1E4E')
     plt.axvline(fixed_threshold, color='k', ls='--', label=f'Threshold ({fixed_threshold:.2f})')
-    # 加入 param_title 到標題中
     plt.title(f"Distance Distribution ({subset}) | {cell_title}\n{param_title}\nSI: {data['sep_index']:.4f} | Threshold: {fixed_threshold:.2f}", fontweight='bold')
-    # 修改標籤為 Cosine Distance
-    plt.xlabel("Cosine Distance"); plt.ylabel("Probability Density"); plt.legend()
+    plt.xlabel("1 - Cosine Similarity"); plt.ylabel("Probability Density"); plt.legend()
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
 
     # Sampling for visualization
