@@ -8,6 +8,7 @@ from scipy.integrate import simpson
 from numpy import minimum
 from collections import OrderedDict
 from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score # 新增
 from matplotlib.colors import ListedColormap
 import umap
 
@@ -32,6 +33,7 @@ def test_triplet(model, dataloader, device):
     with torch.no_grad():
         for data in dataloader:
             o1, o2 = model.forward_one(data[0].to(device)), model.forward_one(data[1].to(device))
+            # 保持歐氏距離
             distances.extend(F.pairwise_distance(o1, o2).cpu().numpy())
             labels.extend(data[2].numpy())
     return np.array(distances), np.array(labels)
@@ -68,7 +70,6 @@ elif "NIPBL" in cell_name.upper():
 else:
     lgd = [f"{cell_name} R1", f"{cell_name} R2", "Treat R1", "Treat R2"]
 
-# 擷取參數資訊作為標題
 param_title = m_base.replace('_best', '').replace('_', ' | ')
 
 print(f"Step 1: Calibrating Threshold from Validation ({cell_name})...")
@@ -87,19 +88,8 @@ for subset in ["train_val", "test"]:
                             reference=reference_genomes[dataset_config[args.data_inputs[0]]["reference"]])])
     dist, lbl = test_triplet(model, DataLoader(ds, batch_size=128), device)
     data = calculate_metrics(dist, lbl, fixed_threshold=fixed_threshold)
-    results.append({"set": subset, "rep_rate": data["rep_rate"], "cond_rate": data["cond_rate"], "sep_index": data["sep_index"]})
 
-    # 1. Histogram
-    plt.figure(figsize=(9, 6))
-    plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Replicates', alpha=0.5, color='#108690')
-    plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Conditions', alpha=0.5, color='#1D1E4E')
-    plt.axvline(fixed_threshold, color='k', ls='--', label=f'Threshold ({fixed_threshold:.2f})')
-    # 加入 param_title 到標題中
-    plt.title(f"Distance Distribution ({subset}) | {cell_title}\n{param_title}\nSI: {data['sep_index']:.4f} | Threshold: {fixed_threshold:.2f}", fontweight='bold')
-    plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
-    plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
-
-    # Sampling for visualization
+    # 抽樣計算
     embs, detailed_lbls = [], []
     samples_per_file = max(1, 5000 // len(paths))
     with torch.no_grad():
@@ -119,22 +109,47 @@ for subset in ["train_val", "test"]:
                 if count >= samples_per_file: break
 
     embs, detailed_lbls = np.array(embs), np.array(detailed_lbls)
+    
+    # 計算二元輪廓係數 (將 R1/R2 合併)
+    binary_lbls = [0 if (l == 1 or l == 2) else 1 for l in detailed_lbls]
+    sil_score = silhouette_score(embs, binary_lbls, metric='euclidean') # 歐氏版本使用 euclidean 衡量
+    
+    mean_perf = (data["rep_rate"] + data["cond_rate"]) / 2
+    
+    results.append({
+        "set": subset, 
+        "rep_rate": data["rep_rate"], 
+        "cond_rate": data["cond_rate"], 
+        "mean_performance": mean_perf,
+        "sep_index": data["sep_index"],
+        "silhouette": sil_score
+    })
+
+    # 1. Histogram
+    plt.figure(figsize=(9, 6))
+    plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Replicates', alpha=0.5, color='#108690')
+    plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Conditions', alpha=0.5, color='#1D1E4E')
+    plt.axvline(fixed_threshold, color='k', ls='--', label=f'Threshold ({fixed_threshold:.2f})')
+    plt.title(f"Distance Distribution ({subset}) | {cell_title}\n{param_title}\nSI: {data['sep_index']:.4f} | Mean Perf: {mean_perf:.4f}", fontweight='bold')
+    plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
+    plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
+
     cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
 
     # 2. t-SNE
     print(f"Calculating t-SNE for {subset}...")
-    res_tsne = TSNE(n_components=2, perplexity=40, random_state=42, early_exaggeration=20).fit_transform(embs)
+    res_tsne = TSNE(n_components=2, perplexity=40, random_state=42, early_exaggeration=20, metric='euclidean').fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
     plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
-    plt.title(f"Latent Space Visualization (t-SNE) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
+    plt.title(f"Latent Space Visualization (t-SNE) - {subset.upper()} | {cell_title}\n{param_title}\nSilhouette: {sil_score:.4f}", fontweight='bold')
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
 
     # 3. UMAP
     print(f"Calculating UMAP for {subset}...")
-    res_umap = umap.UMAP(random_state=42, n_neighbors=80, min_dist=0.1, metric='cosine').fit_transform(embs)
+    res_umap = umap.UMAP(random_state=42, n_neighbors=80, min_dist=0.1, metric='euclidean').fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
     plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
-    plt.title(f"Latent Space Visualization (UMAP) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
+    plt.title(f"Latent Space Visualization (UMAP) - {subset.upper()} | {cell_title}\n{param_title}\nSilhouette: {sil_score:.4f}", fontweight='bold')
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_umap.pdf"), bbox_inches='tight'); plt.close()
 
 # ---------------------------------------------------------
