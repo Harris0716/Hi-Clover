@@ -68,6 +68,7 @@ elif "NIPBL" in cell_name.upper():
 else:
     lgd = [f"{cell_name} R1", f"{cell_name} R2", "Treat R1", "Treat R2"]
 
+# 擷取參數資訊作為標題
 param_title = m_base.replace('_best', '').replace('_', ' | ')
 
 print(f"Step 1: Calibrating Threshold from Validation ({cell_name})...")
@@ -88,16 +89,17 @@ for subset in ["train_val", "test"]:
     data = calculate_metrics(dist, lbl, fixed_threshold=fixed_threshold)
     results.append({"set": subset, "rep_rate": data["rep_rate"], "cond_rate": data["cond_rate"], "sep_index": data["sep_index"]})
 
-    # hist
+    # 1. Histogram (已將 param_title 加回標題)
     plt.figure(figsize=(9, 6))
     plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Technical Replicates', alpha=0.5, color='#108690')
     plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Biological Conditions', alpha=0.5, color='#1D1E4E')
     plt.axvline(fixed_threshold, color='k', ls='--', label=f'Threshold ({fixed_threshold:.2f})')
-    plt.title(f"Distance Distribution ({subset}) | {cell_title}\nSI: {data['sep_index']:.4f} | Threshold: {fixed_threshold:.2f}", fontweight='bold')
+    # 加入 param_title 到標題中
+    plt.title(f"Distance Distribution ({subset}) | {cell_title}\n{param_title}\nSI: {data['sep_index']:.4f} | Threshold: {fixed_threshold:.2f}", fontweight='bold')
     plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
 
-    # sampling
+    # Sampling for visualization
     embs, detailed_lbls = [], []
     samples_per_file = max(1, 5000 // len(paths))
     with torch.no_grad():
@@ -119,7 +121,7 @@ for subset in ["train_val", "test"]:
     embs, detailed_lbls = np.array(embs), np.array(detailed_lbls)
     cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
 
-    # t-SNE 
+    # 2. t-SNE
     print(f"Calculating t-SNE for {subset}...")
     res_tsne = TSNE(n_components=2, perplexity=60, random_state=42, early_exaggeration=15).fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
@@ -127,7 +129,7 @@ for subset in ["train_val", "test"]:
     plt.title(f"Latent Space Visualization (t-SNE) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
 
-    # UMAP
+    # 3. UMAP
     print(f"Calculating UMAP for {subset}...")
     res_umap = umap.UMAP(random_state=42, n_neighbors=50, min_dist=0.4).fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
