@@ -22,7 +22,7 @@ do
     mkdir -p $OUT_DIR
 
     # 2. 訓練 (使用您提供的 train_v1.py 邏輯)
-    python Hi-Clover/train_v1.py $MODEL config.json $LR $DATA \
+    python Hi-Clover/train.py $MODEL config.json $LR $DATA \
         --batch_size $BATCH \
         --epoch_training 100 \
         --epoch_enforced_training 20 \

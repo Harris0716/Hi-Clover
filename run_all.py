@@ -33,7 +33,7 @@ def main():
     print("="*50)
 
     train_cmd = [
-        "python", "Hi-Clover/train_v2_graph.py",
+        "python", "Hi-Clover/train.py",
         args.model_name,
         args.json_file,
         str(args.learning_rate)
