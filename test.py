@@ -123,7 +123,7 @@ for subset in ["train_val", "test"]:
 
     # 2. t-SNE
     print(f"Calculating t-SNE for {subset}...")
-    res_tsne = TSNE(n_components=2, perplexity=60, random_state=42, early_exaggeration=15).fit_transform(embs)
+    res_tsne = TSNE(n_components=2, perplexity=40, random_state=42, early_exaggeration=20).fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
     plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
     plt.title(f"Latent Space Visualization (t-SNE) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
@@ -131,7 +131,7 @@ for subset in ["train_val", "test"]:
 
     # 3. UMAP
     print(f"Calculating UMAP for {subset}...")
-    res_umap = umap.UMAP(random_state=42, n_neighbors=50, min_dist=0.4).fit_transform(embs)
+    res_umap = umap.UMAP(random_state=42, n_neighbors=80, min_dist=0.1, metric='euclidean').fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
     plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Samples")
     plt.title(f"Latent Space Visualization (UMAP) - {subset.upper()} | {cell_title}\n{param_title}", fontweight='bold')
