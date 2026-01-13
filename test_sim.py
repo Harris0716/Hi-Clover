@@ -111,15 +111,17 @@ for subset in ["train_val", "test"]:
 
     embs, detailed_lbls = np.array(embs), np.array(detailed_lbls)
     
-    # 計算輪廓係數 (以四類標籤為準)
-    sil_score = silhouette_score(embs, detailed_lbls, metric='cosine')
-    mean_perf = (data["rep_rate"] + data["cond_rate"]) / 2 # 計算 Mean Performance
+    # 修改處：將原本 4 類改為 2 類 (Ctrl=0, Treat=1) 計算輪廓係數
+    binary_lbls = [0 if (l == 1 or l == 2) else 1 for l in detailed_lbls]
+    sil_score = silhouette_score(embs, binary_lbls, metric='cosine')
+    
+    mean_perf = (data["rep_rate"] + data["cond_rate"]) / 2 
     
     results.append({
         "set": subset, 
         "rep_rate": data["rep_rate"], 
         "cond_rate": data["cond_rate"], 
-        "mean_performance": mean_perf, # 新增欄位
+        "mean_performance": mean_perf,
         "sep_index": data["sep_index"],
         "silhouette": sil_score
     })
