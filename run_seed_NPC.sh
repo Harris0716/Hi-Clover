@@ -4,7 +4,7 @@
 MODEL="TripletLeNet"
 CONFIG="config.json"
 LR="0.001"
-DATA="NIPBL"
+DATA="NPC"
 BS=128
 EPOCH=100
 ENFORCED=20
@@ -14,7 +14,7 @@ MASK="true"
 
 # --- 要測試的 Margin 列表 (在此修改你要跑的數值) ---
 # 例如：0.2, 0.5, 0.8, 1.0
-MARGINS=(0.3 0.5 0.8 1.0)
+MARGINS=(0.2 0.3 0.8 1.0)
 
 # --- 執行迴圈 ---
 for M in "${MARGINS[@]}"
