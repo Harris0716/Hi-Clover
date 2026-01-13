@@ -40,16 +40,16 @@ parser.add_argument("data_inputs", nargs='+', help="keys from dictionary contain
 args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
 
-# 設備設定
+# device setting
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {torch.cuda.device_count() if torch.cuda.is_available() else 'CPU'} device.")
 
-# 固定隨機種子
+# set random seeds
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # ---------------------------------------------------------
-# 檔名參數資訊定義 (修正：移除 _v1style 以匹配 Shell Script)
+# parameters
 # ---------------------------------------------------------
 file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
 base_save_path = os.path.join(args.outpath, file_param_info)
@@ -103,7 +103,7 @@ def get_stats(a_out, p_out, n_out):
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
-best_val_loss = float('inf')  # 用於紀錄最佳 Loss
+best_val_loss = float('inf')
 prev_val_loss_sum = float('inf')
 train_losses = []
 val_losses = []
@@ -148,7 +148,6 @@ for epoch in range(args.epoch_training):
     
     print(f"Epoch [{epoch+1}/{args.epoch_training}] Validation Loss: {avg_val_loss:.4f}, Time: {time.time() - epoch_start_time:.2f}s")
 
-    # --- 修正：儲存最佳模型 (配合 Shell Script) ---
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
@@ -161,7 +160,6 @@ for epoch in range(args.epoch_training):
             break
         prev_val_loss_sum = val_loss_sum
 
-    # 每個 Epoch 存一次 ckpt
     torch.save(model.state_dict(), base_save_path + '.ckpt')
 
 # ---------------------------------------------------------
@@ -172,7 +170,7 @@ hours, rem = divmod(total_duration, 3600)
 minutes, seconds = divmod(rem, 60)
 print(f"\nTraining Completed. Total Time: {int(hours)}h {int(minutes)}m {seconds:.2f}s")
 
-# 繪製 Loss 曲線
+# loss curve
 plt.figure(figsize=(10, 6))
 plt.plot(train_losses, label='Train Loss')
 plt.plot(val_losses, label='Validation Loss')

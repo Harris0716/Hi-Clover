@@ -8,10 +8,9 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse
 import json
 import os
-import time  # 新增：用於時間統計
-import matplotlib.pyplot as plt  # 新增：用於繪圖
+import time 
+import matplotlib.pyplot as plt
 
-# 導入 Dataset 與模型定義
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
 from torch_plus.loss import TripletLoss
@@ -37,16 +36,16 @@ parser.add_argument("data_inputs", nargs='+', help="Keys for training and valida
 args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
 
-# 設備設定
+# device settings
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {torch.cuda.device_count() if torch.cuda.is_available() else 'CPU'} device.")
 
-# 固定隨機種子
+# set random seed
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # ---------------------------------------------------------
-# 檔名參數資訊定義
+# parameters
 # ---------------------------------------------------------
 file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
 base_save_path = os.path.join(args.outpath, file_param_info)
@@ -95,8 +94,8 @@ scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_tra
 # ---------------------------------------------------------
 best_val_loss = float('inf')
 prev_val_loss = float('inf')
-train_losses = []  # 新增：紀錄訓練 Loss 繪圖用
-val_losses = []    # 新增：紀錄驗證 Loss 繪圖用
+train_losses = []  
+val_losses = []   
 
 def get_stats(a_out, p_out, n_out):
     d_ap = F.pairwise_distance(a_out, p_out, p=2).mean().item()
@@ -104,20 +103,15 @@ def get_stats(a_out, p_out, n_out):
     return d_ap, d_an
 
 print(f"Starting training for {args.epoch_training} epochs...")
-total_start_time = time.time()  # 新增：總時間開始
+total_start_time = time.time()  
 
 for epoch in range(args.epoch_training):
-    epoch_start_time = time.time()  # 新增：單個 Epoch 時間開始
+    epoch_start_time = time.time()  
     model.train()
     running_loss = 0.0
     
     for i, (anchor, positive, negative) in enumerate(train_loader):
         anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
-
-        # if i == 0:
-        #     with torch.no_grad():
-        #         print(f"\n[Debug Epoch {epoch+1}] Input Max: {anchor.max().item():.4f}, Mean: {anchor.mean().item():.4f}")
-
         optimizer.zero_grad()
         a_out, p_out, n_out = model(anchor, positive, negative)
         
@@ -144,24 +138,21 @@ for epoch in range(args.epoch_training):
             val_loss += criterion(a_out, p_out, n_out).item()
     
     avg_val_loss = val_loss / batches_validation
-    
-    # 新增：儲存 Loss 紀錄
+
     train_losses.append(running_loss / no_of_batches)
     val_losses.append(avg_val_loss)
-    
-    # 新增：印出單個 Epoch 耗時
+
     epoch_duration = time.time() - epoch_start_time
     print(f"Epoch [{epoch+1}/{args.epoch_training}] Validation Loss: {avg_val_loss:.4f}, Time: {epoch_duration:.2f}s")
 
     scheduler.step()
 
-    # 儲存最佳模型
+    # save best weight
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
         print(f"Best model saved to {base_save_path}_best.ckpt")
 
-    # 早停策略 (維持你原本的 1.1 倍邏輯)
     if epoch >= args.epoch_enforced_training:
         if avg_val_loss > 1.1 * prev_val_loss:
             print(f"Early stopping triggered at epoch {epoch+1}")
@@ -169,27 +160,25 @@ for epoch in range(args.epoch_training):
         prev_val_loss = avg_val_loss
 
 # ---------------------------------------------------------
-# 結束統計與繪圖 (標題強化版)
+# Evaluation and Plot
 # ---------------------------------------------------------
-# 儲存最後模型
+# save last weight
 torch.save(model.state_dict(), base_save_path + '_last.ckpt')
 
-# 計算總訓練時間
+# calculate total time
 total_duration = time.time() - total_start_time
 hours, rem = divmod(total_duration, 3600)
 minutes, seconds = divmod(rem, 60)
 print(f"\nTraining Completed. Total Time: {int(hours)}h {int(minutes)}m {seconds:.2f}s")
 
-# 自動繪製 Loss 曲線圖
-plt.figure(figsize=(12, 7)) # 稍微加寬畫布以容納標題
+# loss curve
+plt.figure(figsize=(12, 7)) 
 plt.plot(train_losses, label='Train Loss', linewidth=2)
 plt.plot(val_losses, label='Validation Loss', linewidth=2)
 
 plt.xlabel('Epochs', fontsize=12)
 plt.ylabel('Loss', fontsize=12)
 
-# --- 關鍵修改：動態標題 ---
-# 使用 \n 換行讓標題更整潔
 plot_title = (
     f"Training History: {args.model_name}\n"
     f"LR: {args.learning_rate} | Batch: {args.batch_size} | "
@@ -199,10 +188,10 @@ plt.title(plot_title, fontsize=14, fontweight='bold', pad=15)
 
 plt.legend(fontsize=11)
 plt.grid(True, linestyle='--', alpha=0.7)
-plt.tight_layout() # 自動調整佈局確保文字不被切掉
+plt.tight_layout() 
 
 plot_path = base_save_path + '_loss_curve.png'
-plt.savefig(plot_path, dpi=300) # 提高解析度到 300dpi
+plt.savefig(plot_path, dpi=300) 
 plt.close()
 
 print(f"Loss curve saved with parameters in title to: {plot_path}")
