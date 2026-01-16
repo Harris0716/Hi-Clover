@@ -201,7 +201,6 @@ class TripletHiCDataset(HiCDataset):
                     for other_class in class_groups:
                         if other_class != anchor_class:
                             for negative in class_groups[other_class]:
-                                # --- 關鍵修改：將 anchor_class (也就是 Label) 存入 ---
                                 self.data.append((
                                     anchor[0],    # anchor image
                                     positive[0],  # positive image

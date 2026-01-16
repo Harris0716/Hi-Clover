@@ -8,7 +8,7 @@ from scipy.integrate import simpson
 from numpy import minimum
 from collections import OrderedDict
 from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score # 新增
+from sklearn.metrics import silhouette_score
 from matplotlib.colors import ListedColormap
 import umap
 
