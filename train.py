@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
-from torch_plus.loss import TripletLoss
+from torch_plus.loss import TripletLoss, soft_margin_triplet_loss
 from HiSiNet.reference_dictionaries import reference_genomes
 
 # ---------------------------------------------------------
@@ -64,7 +64,7 @@ val_loader = DataLoader(val_dataset, batch_size=128, sampler=SequentialSampler(v
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-criterion = TripletLoss(margin=args.margin)
+criterion = soft_margin_triplet_loss
 optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_training)
 
