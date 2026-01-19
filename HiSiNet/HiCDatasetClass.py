@@ -138,7 +138,7 @@ class TripletHiCDataset(HiCDataset):
             filenames_norm.add((data.metadata['filename'], data.metadata['norm']))
         return True
 
-    def append_data(self, curr_data, pos, mode='paired'):
+    def append_data(self, curr_data, pos, mode='exhaustive'):
         """
         優化後的數據生成函數
         mode: 
