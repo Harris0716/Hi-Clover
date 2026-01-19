@@ -138,77 +138,55 @@ class TripletHiCDataset(HiCDataset):
             filenames_norm.add((data.metadata['filename'], data.metadata['norm']))
         return True
 
-    # def append_data(self, curr_data, pos):
-    #     """生成 triplets，確保每個樣本都擔任過 Anchor (共 8 個)"""
-    #     if len(curr_data) < 2:
-    #         return
-    #     class_groups = {}
-    #     for i, data in enumerate(curr_data):
-    #         class_id = data[1]
-    #         if class_id not in class_groups:
-    #             class_groups[class_id] = []
-    #         class_groups[class_id].append(data)
+    def append_data(self, curr_data, pos, mode='exhaustive'):
+    """
+    優化後的數據生成函數
+    mode: 
+      - 'exhaustive': 全面對齊，每個樣本都當過 Anchor (每個 window 生成 8 組)
+      - 'paired': 配對對齊，固定正樣本對 (每個 window 生成 4 組)
+    """
+    if len(curr_data) < 2:
+        return
 
-    #     for anchor_class, samples in class_groups.items():
-    #         if len(samples) < 2:
-    #             continue
+    # 1. 根據 class_id 進行分組
+    class_groups = {}
+    for data in curr_data:
+        class_id = data[1]
+        if class_id not in class_groups:
+            class_groups[class_id] = []
+        class_groups[class_id].append(data)
 
-    #         # 遍歷該類別中的每一個樣本作為 Anchor
-    #         for i in range(len(samples)):
-    #             anchor = samples[i]
+    # 2. 生成 Triplets
+    for anchor_class, samples in class_groups.items():
+        if len(samples) < 2:
+            continue
+
+        for i, anchor in enumerate(samples):
+            # 根據 mode 決定 Positive 的選取範圍
+            if mode == 'exhaustive':
+                # 全面遍歷：除了自己以外的都是 Positive
+                pos_indices = [idx for idx in range(len(samples)) if idx != i]
+            else: # mode == 'paired'
+                # 簡化遍歷：只往後找，減少重複配對
+                pos_indices = range(i + 1, len(samples))
+
+            for j in pos_indices:
+                positive = samples[j]
                 
-    #             # 遍歷同類別中的「其他」樣本作為 Positive
-    #             for j in range(len(samples)):
-    #                 if i == j: continue # 不能自己跟自己配對
-    #                 positive = samples[j]
-
-    #                 # 遍歷不同類別的樣本作為 Negative
-    #                 for other_class, other_samples in class_groups.items():
-    #                     if other_class == anchor_class:
-    #                         continue
-                        
-    #                     for negative in other_samples:
-    #                         self.data.append((
-    #                             anchor[0],    
-    #                             positive[0],  
-    #                             negative[0],  
-    #                             anchor_class  
-    #                         ))
-    #                         self.positions.append(pos)
-    #                         self.labels.append((anchor_class, other_class))
-
-    def append_data(self, curr_data, pos):
-        """Generate triplets from current data."""
-        if len(curr_data) < 2:
-            return
-
-        # Group data by class_id
-        class_groups = {}
-        for i, data in enumerate(curr_data):
-            class_id = data[1]
-            if class_id not in class_groups:
-                class_groups[class_id] = []
-            class_groups[class_id].append(data)
-
-        # Generate triplets
-        for anchor_class in class_groups:
-            if len(class_groups[anchor_class]) < 2:
-                continue
-
-            for i, anchor in enumerate(class_groups[anchor_class]):
-                for j in range(i + 1, len(class_groups[anchor_class])):
-                    positive = class_groups[anchor_class][j]
-                    for other_class in class_groups:
-                        if other_class != anchor_class:
-                            for negative in class_groups[other_class]:
-                                self.data.append((
-                                    anchor[0],    # anchor image
-                                    positive[0],  # positive image
-                                    negative[0],  # negative image
-                                    anchor_class  # <--- 新增這一行
-                                ))
-                                self.positions.append(pos)
-                                self.labels.append((anchor_class, other_class))
+                # 遍歷不同類別的 Negative
+                for other_class, other_samples in class_groups.items():
+                    if other_class == anchor_class:
+                        continue
+                    
+                    for negative in other_samples:
+                        self.data.append((
+                            anchor[0],    # anchor image/path
+                            positive[0],  # positive image/path
+                            negative[0],  # negative image/path
+                            anchor_class  
+                        ))
+                        self.positions.append(pos)
+                        self.labels.append((anchor_class, other_class))
 
     def make_data(self, list_of_HiCDatasets):
         """Process datasets and generate triplets."""
