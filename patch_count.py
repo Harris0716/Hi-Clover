@@ -4,10 +4,10 @@ from HiSiNet.HiCDatasetClass import HiCDatasetDec
 # 定義檔案路徑與樣本名稱的對應關係
 # 格式: (條件, 複製組, 訓練集路徑, 驗證集路徑, 測試集路徑)
 samples_info = [
-    ("TAM", "R1", "liver_data/TAM_R1.mlhic", "liver_data/TAM_validation_R1.mlhic", "liver_data/TAM_test_R1.mlhic"),
-    ("TAM", "R2", "liver_data/TAM_R2.mlhic", "liver_data/TAM_validation_R2.mlhic", "liver_data/TAM_test_R2.mlhic"),
-    ("KO",  "R1", "liver_data/KO_R1.mlhic", "liver_data/KO_validation_R1.mlhic", "liver_data/KO_test_R1.mlhic"),
-    ("KO",  "R2", "liver_data/KO_R2.mlhic", "liver_data/KO_validation_R2.mlhic", "liver_data/KO_test_R2.mlhic"),
+    ("TAM", "R1", "/work/u1696810/liver_data/TAM_R1.mlhic", "/work/u1696810/liver_data/TAM_validation_R1.mlhic", "/work/u1696810/liver_data/TAM_test_R1.mlhic"),
+    ("TAM", "R2", "/work/u1696810/liver_data/TAM_R2.mlhic", "/work/u1696810/liver_data/TAM_validation_R2.mlhic", "/work/u1696810/liver_data/TAM_test_R2.mlhic"),
+    ("KO",  "R1", "/work/u1696810/liver_data/KO_R1.mlhic", "/work/u1696810/liver_data/KO_validation_R1.mlhic", "/work/u1696810/liver_data/KO_test_R1.mlhic"),
+    ("KO",  "R2", "/work/u1696810/liver_data/KO_R2.mlhic", "/work/u1696810/liver_data/KO_validation_R2.mlhic", "/work/u1696810/liver_data/KO_test_R2.mlhic"),
 ]
 
 summary_rows = []
