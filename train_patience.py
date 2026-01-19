@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
-from torch_plus.loss import TripletLoss, soft_margin_triplet_loss
 from HiSiNet.reference_dictionaries import reference_genomes
 
 # ---------------------------------------------------------
@@ -21,15 +20,13 @@ parser.add_argument('json_file', type=str, help='JSON dictionary with file paths
 parser.add_argument('learning_rate', type=float, help='Learning rate')
 parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
 parser.add_argument('--epoch_training', type=int, default=100, help='Max epochs')
-parser.add_argument('--epoch_enforced_training', type=int, default=20, help='Enforced epochs')
+parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
 parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
 parser.add_argument('--seed', type=int, default=42, help='Random seed')
 parser.add_argument('--mask', type=bool, default=True, help='Mask diagonal')
-# parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
+parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
 parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for AdamW')
-parser.add_argument('--patience', type=int, default=15, help='Early stopping patience')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
-
 
 args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
@@ -66,28 +63,54 @@ val_loader = DataLoader(val_dataset, batch_size=128, sampler=SequentialSampler(v
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-criterion = soft_margin_triplet_loss
+# [Change 1] 使用 TripletMarginLoss (Hard Margin)
+criterion = nn.TripletMarginLoss(margin=args.margin, p=2)
+
 optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_training)
 
-best_val_loss, prev_val_loss = float('inf'), float('inf')
+best_val_loss = float('inf')
+patience_counter = 0  # Patience 計數器
 train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
 
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
-print(f"Starting training for {args.epoch_training} epochs...")
+print(f"Starting training for {args.epoch_training} epochs with Patience {args.patience}...")
 total_start_time = time.time()
 
 for epoch in range(args.epoch_training):
     epoch_start = time.time()
     model.train()
     running_loss, e_norms = 0.0, []
+    
     for i, data in enumerate(train_loader):
         a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
         optimizer.zero_grad()
         ao, po, no = model(a, p, n)
-        loss = criterion(ao, po, no)
+        
+        # L2 Normalize
+        ao = F.normalize(ao, p=2, dim=1)
+        po = F.normalize(po, p=2, dim=1)
+        no = F.normalize(no, p=2, dim=1)
+
+        # 1. Condition Loss (Standard)
+        loss_condition = criterion(ao, po, no)
+
+        # 2. [Change 2] Spatial Loss (Batch Hard Mining)
+        # 計算 Batch 內所有 Anchor 的距離矩陣
+        dist_mat = torch.cdist(ao, ao, p=2)
+        dist_mat.fill_diagonal_(float('inf')) # 避免選到自己
+        
+        # 找出距離最近的錯誤位置 (Hardest Negative)
+        hard_neg_idx = dist_mat.argmin(dim=1)
+        hard_spatial_negative = ao[hard_neg_idx]
+        
+        loss_spatial = criterion(ao, po, hard_spatial_negative)
+
+        # 3. 權重分配 (重壓 Spatial)
+        loss = 0.1 * loss_condition + 0.9 * loss_spatial
+
         loss.backward()
         e_norms.append(nn.utils.clip_grad_norm_(model.parameters(), 1.0).item())
         optimizer.step()
@@ -97,15 +120,34 @@ for epoch in range(args.epoch_training):
             with torch.no_grad():
                 dap = F.pairwise_distance(ao, po).mean().item()
                 dan = F.pairwise_distance(ao, no).mean().item()
-            print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {dap:.4f}, d(a,n): {dan:.4f}")
+                das = F.pairwise_distance(ao, hard_spatial_negative).mean().item()
+            print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], "
+                  f"Loss: {running_loss/(i+1):.4f}, d(a,p): {dap:.2f}, d(Cond): {dan:.2f}, d(HardSpatial): {das:.2f}")
 
+    # Validation
     model.eval()
     v_loss, c_ap, c_an = 0.0, [], []
     with torch.no_grad():
         for data in val_loader:
             a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
             ao, po, no = model(a, p, n)
-            v_loss += criterion(ao, po, no).item()
+            
+            ao = F.normalize(ao, p=2, dim=1)
+            po = F.normalize(po, p=2, dim=1)
+            no = F.normalize(no, p=2, dim=1)
+
+            loss_condition = criterion(ao, po, no)
+            
+            # Validation 也要算 Batch Hard 才能正確反映 Loss
+            dist_mat = torch.cdist(ao, ao, p=2)
+            dist_mat.fill_diagonal_(float('inf'))
+            hard_neg_idx = dist_mat.argmin(dim=1)
+            hard_spatial_negative = ao[hard_neg_idx]
+            loss_spatial = criterion(ao, po, hard_spatial_negative)
+
+            loss = 0.1 * loss_condition + 0.9 * loss_spatial
+
+            v_loss += loss.item()
             c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
             c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
     
@@ -119,14 +161,22 @@ for epoch in range(args.epoch_training):
 
     print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
     
+    # [Change 3] Patience Check
     if avg_v < best_val_loss:
         best_val_loss = avg_v
+        patience_counter = 0 # Reset counter
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
         best_ap_dist, best_an_dist = c_ap, c_an
+        print("-> Best Model Saved!")
+    else:
+        patience_counter += 1
+        print(f"-> No improvement. Patience: {patience_counter}/{args.patience}")
     
     scheduler.step()
-    if epoch >= args.epoch_enforced_training and avg_v > 1.1 * prev_val_loss: break
-    prev_val_loss = avg_v
+    
+    if patience_counter >= args.patience:
+        print(f"Early stopping triggered after {epoch+1} epochs.")
+        break
 
 def save_fig(fig, suffix):
     plt.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(base_save_path + suffix, dpi=300); plt.close(fig)
