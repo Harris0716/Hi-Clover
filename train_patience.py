@@ -14,32 +14,26 @@ from HiSiNet.reference_dictionaries import reference_genomes
 # ---------------------------------------------------------
 # Argument Parser
 # ---------------------------------------------------------
-parser = argparse.ArgumentParser(description='Triplet network training for Hi-C Replicate Analysis')
-parser.add_argument('model_name', type=str, help='Model from models.py')
-parser.add_argument('json_file', type=str, help='JSON dictionary with file paths')
-parser.add_argument('learning_rate', type=float, help='Learning rate')
-parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
-parser.add_argument('--epoch_training', type=int, default=100, help='Max epochs')
-parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
-parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
-parser.add_argument('--seed', type=int, default=42, help='Random seed')
-parser.add_argument('--mask', type=bool, default=True, help='Mask diagonal')
-parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
-parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for AdamW')
-parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
+parser = argparse.ArgumentParser()
+parser.add_argument('model_name', type=str)
+parser.add_argument('json_file', type=str)
+parser.add_argument('learning_rate', type=float)
+parser.add_argument("data_inputs", nargs='+')
+parser.add_argument('--batch_size', type=int, default=128)
+parser.add_argument('--epoch_training', type=int, default=100)
+parser.add_argument('--epoch_enforced_training', type=int, default=20)
+parser.add_argument('--patience', type=int, default=10)
+parser.add_argument('--outpath', type=str, default="outputs/")
+parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--mask', type=lambda x: x.lower() == 'true', default=False)
+parser.add_argument('--margin', type=float, default=1.0)
+parser.add_argument('--weight_decay', type=float, default=1e-4)
 
 args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
 
-# device setting
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-torch.manual_seed(args.seed)
-np.random.seed(args.seed)
-
-# --- title setting  ---
-cell_line = args.data_inputs[0] + " data"
-param_title = (f"Cell Line: {cell_line} | Model: {args.model_name} | Seed: {args.seed} | LR: {args.learning_rate}\n"
-               f"BS: {args.batch_size} | Margin: {args.margin} | WD: {args.weight_decay}")
+torch.manual_seed(args.seed); np.random.seed(args.seed)
 
 f_info = f"{args.model_name}_lr{args.learning_rate}_bs{args.batch_size}_m{args.margin}_wd{args.weight_decay}"
 base_save_path = os.path.join(args.outpath, f_info)
@@ -63,134 +57,66 @@ val_loader = DataLoader(val_dataset, batch_size=128, sampler=SequentialSampler(v
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-# [Change 1] 使用 TripletMarginLoss (Hard Margin)
 criterion = nn.TripletMarginLoss(margin=args.margin, p=2)
-
 optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch_training)
 
-best_val_loss = float('inf')
-patience_counter = 0  # Patience 計數器
-train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
+best_val_loss, patience_counter = float('inf'), 0
+train_losses, val_losses, grad_norm_history = [], [], []
 
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
-print(f"Starting training for {args.epoch_training} epochs with Patience {args.patience}...")
-total_start_time = time.time()
-
 for epoch in range(args.epoch_training):
-    epoch_start = time.time()
     model.train()
     running_loss, e_norms = 0.0, []
-    
-    for i, data in enumerate(train_loader):
-        a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
+    for data in train_loader:
+        a, p, n = [d.to(device) for d in data]
         optimizer.zero_grad()
-        ao, po, no = model(a, p, n)
-        
-        # L2 Normalize
-        ao = F.normalize(ao, p=2, dim=1)
-        po = F.normalize(po, p=2, dim=1)
-        no = F.normalize(no, p=2, dim=1)
+        ao, po, no = [F.normalize(o, p=2, dim=1) for o in model(a, p, n)]
 
-        # 1. Condition Loss (Standard)
-        loss_condition = criterion(ao, po, no)
-
-        # 2. [Change 2] Spatial Loss (Batch Hard Mining)
-        # 計算 Batch 內所有 Anchor 的距離矩陣
+        # 核心優化：Batch Hard Spatial Loss
         dist_mat = torch.cdist(ao, ao, p=2)
-        dist_mat.fill_diagonal_(float('inf')) # 避免選到自己
-        
-        # 找出距離最近的錯誤位置 (Hardest Negative)
-        hard_neg_idx = dist_mat.argmin(dim=1)
-        hard_spatial_negative = ao[hard_neg_idx]
-        
-        loss_spatial = criterion(ao, po, hard_spatial_negative)
-
-        # 3. 權重分配 (重壓 Spatial)
-        loss = 0.1 * loss_condition + 0.9 * loss_spatial
+        dist_mat.fill_diagonal_(float('inf'))
+        # 0.1(條件區分) : 0.9(空間對齊) 權重
+        loss = 0.1 * criterion(ao, po, no) + 0.9 * criterion(ao, po, ao[dist_mat.argmin(dim=1)])
 
         loss.backward()
         e_norms.append(nn.utils.clip_grad_norm_(model.parameters(), 1.0).item())
         optimizer.step()
         running_loss += loss.item()
-        
-        if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
-            with torch.no_grad():
-                dap = F.pairwise_distance(ao, po).mean().item()
-                dan = F.pairwise_distance(ao, no).mean().item()
-                das = F.pairwise_distance(ao, hard_spatial_negative).mean().item()
-            print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], "
-                  f"Loss: {running_loss/(i+1):.4f}, d(a,p): {dap:.2f}, d(Cond): {dan:.2f}, d(HardSpatial): {das:.2f}")
 
-    # Validation
     model.eval()
     v_loss, c_ap, c_an = 0.0, [], []
     with torch.no_grad():
         for data in val_loader:
-            a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
-            ao, po, no = model(a, p, n)
+            a, p, n = [d.to(device) for d in data]
+            ao, po, no = [F.normalize(o, p=2, dim=1) for o in model(a, p, n)]
             
-            ao = F.normalize(ao, p=2, dim=1)
-            po = F.normalize(po, p=2, dim=1)
-            no = F.normalize(no, p=2, dim=1)
-
-            loss_condition = criterion(ao, po, no)
-            
-            # Validation 也要算 Batch Hard 才能正確反映 Loss
             dist_mat = torch.cdist(ao, ao, p=2)
             dist_mat.fill_diagonal_(float('inf'))
-            hard_neg_idx = dist_mat.argmin(dim=1)
-            hard_spatial_negative = ao[hard_neg_idx]
-            loss_spatial = criterion(ao, po, hard_spatial_negative)
-
-            loss = 0.1 * loss_condition + 0.9 * loss_spatial
-
-            v_loss += loss.item()
+            v_loss += (0.1 * criterion(ao, po, no) + 0.9 * criterion(ao, po, ao[dist_mat.argmin(dim=1)])).item()
             c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
             c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
     
     avg_v = v_loss / len(val_loader)
-    avg_ap, avg_an = np.mean(c_ap), np.mean(c_an)
-    l_ratio = np.log10((avg_an + 1e-6) / (avg_ap + 1e-6))
-    
-    val_losses.append(avg_v); val_log_ratio_history.append(l_ratio)
-    train_losses.append(running_loss / len(train_loader))
+    train_losses.append(running_loss / len(train_loader)); val_losses.append(avg_v)
     grad_norm_history.append(np.mean(e_norms))
 
-    print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
+    print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}")
     
-    # [Change 3] Patience Check
     if avg_v < best_val_loss:
-        best_val_loss = avg_v
-        patience_counter = 0 # Reset counter
+        best_val_loss, patience_counter = avg_v, 0
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
         best_ap_dist, best_an_dist = c_ap, c_an
-        print("-> Best Model Saved!")
-    else:
+    elif epoch >= args.epoch_enforced_training:
         patience_counter += 1
-        print(f"-> No improvement. Patience: {patience_counter}/{args.patience}")
     
     scheduler.step()
-    
-    if patience_counter >= args.patience:
-        print(f"Early stopping triggered after {epoch+1} epochs.")
-        break
+    if patience_counter >= args.patience: break
 
-def save_fig(fig, suffix):
-    plt.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(base_save_path + suffix, dpi=300); plt.close(fig)
-
-fig1, ax = plt.subplots(1, 3, figsize=(18, 6))
-ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
-ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Embedding Separation Quality'); ax[1].axhline(0, color='k', ls='--')
-ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm (Stability)'); ax[2].axhline(1.0, color='r', ls='--')
-fig1.suptitle(f"Training Metrics | {cell_line}\n{param_title}"); save_fig(fig1, '_training_stats.pdf')
-
-fig2 = plt.figure(figsize=(10, 7))
-plt.hist(best_ap_dist, bins=50, alpha=0.6, label='Positives d(a,p)', color='g', density=True)
-plt.hist(best_an_dist, bins=50, alpha=0.6, label='Negatives d(a,n)', color='r', density=True)
-plt.title(f"Validation Set: Pairwise Distance Distribution | {cell_line}\n{param_title}"); plt.legend()
-save_fig(fig2, '_val_dist_hist.pdf')
-
-print(f"Training Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
+# 繪圖
+fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].legend()
+ax[1].hist(best_ap_dist, bins=50, alpha=0.5, label='d(a,p)'); ax[1].hist(best_an_dist, bins=50, alpha=0.5, label='d(a,n)'); ax[1].legend()
+plt.savefig(base_save_path + '_stats.pdf'); plt.close()
