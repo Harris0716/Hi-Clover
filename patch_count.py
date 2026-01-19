@@ -54,4 +54,4 @@ print("-" * 60)
 print(f"Grand Total Across All Samples: {total_all['Total']:,}")
 
 # 匯出成 CSV 備用
-# df_stats.to_csv("dataset_statistics.csv", index=False)
+df_stats.to_csv("dataset_statistics.csv", index=False)
