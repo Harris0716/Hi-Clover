@@ -96,7 +96,7 @@ for epoch in range(args.epoch_training):
         spatial_negative = ao[idx]
         loss_spatial = criterion(ao, po, spatial_negative)
 
-        loss = 0.5 * loss_condition + 0.5 * loss_spatial
+        loss = 0.1 * loss_condition + 0.9 * loss_spatial
 
         loss.backward()
         e_norms.append(nn.utils.clip_grad_norm_(model.parameters(), 1.0).item())
