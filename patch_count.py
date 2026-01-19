@@ -6,8 +6,8 @@ from HiSiNet.HiCDatasetClass import HiCDatasetDec
 samples_info = [
     ("TAM", "R1", "/work/u1696810/liver_data/TAM_R1.mlhic", "/work/u1696810/liver_data/TAM_validation_R1.mlhic", "/work/u1696810/liver_data/TAM_test_R1.mlhic"),
     ("TAM", "R2", "/work/u1696810/liver_data/TAM_R2.mlhic", "/work/u1696810/liver_data/TAM_validation_R2.mlhic", "/work/u1696810/liver_data/TAM_test_R2.mlhic"),
-    ("KO",  "R1", "/work/u1696810/liver_data/KO_R1.mlhic", "/work/u1696810/liver_data/KO_validation_R1.mlhic", "/work/u1696810/liver_data/KO_test_R1.mlhic"),
-    ("KO",  "R2", "/work/u1696810/liver_data/KO_R2.mlhic", "/work/u1696810/liver_data/KO_validation_R2.mlhic", "/work/u1696810/liver_data/KO_test_R2.mlhic"),
+    ("NIPBL",  "R1", "/work/u1696810/liver_data/NIPBL_R1.mlhic", "/work/u1696810/liver_data/NIPBL_validation_R1.mlhic", "/work/u1696810/liver_data/NIPBL_test_R1.mlhic"),
+    ("NIPBL",  "R2", "/work/u1696810/liver_data/NIPBL_R2.mlhic", "/work/u1696810/liver_data/NIPBL_validation_R2.mlhic", "/work/u1696810/liver_data/NIPBL_test_R2.mlhic"),
 ]
 
 summary_rows = []
@@ -45,7 +45,7 @@ df_stats = pd.DataFrame(summary_rows)
 pd.options.display.float_format = '{:,.0f}'.format
 
 # 顯示表格
-print("\n=== Hi-C Dataset Summary Table (TAM & KO) ===")
+print("\n=== Hi-C Dataset Summary Table (TAM & NIPBL) ===")
 print(df_stats.to_string(index=False))
 
 # 也可以計算整體的總計列
