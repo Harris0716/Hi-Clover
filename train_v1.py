@@ -106,9 +106,9 @@ for epoch in range(args.epoch_training):
     model.eval()
     val_loss_sum, c_ap, c_an = 0.0, [], []
     with torch.no_grad():
-        for anchor, positive, negative in val_loader:
-            anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
-            ao, po, no = model(anchor, positive, negative)
+        for data in val_loader:
+            a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
+            ao, po, no = model(a, p, n)
             val_loss_sum += criterion(ao, po, no).item()
             c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
             c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
