@@ -61,8 +61,8 @@ val_dataset = GroupedTripletHiCDataset([
     TripletHiCDataset([HiCDatasetDec.load(p) for p in dataset_config[n]["validation"]], 
     reference=reference_genomes[dataset_config[n]["reference"]]) for n in args.data_inputs])
 
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=RandomSampler(train_dataset), num_workers=4, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=128, sampler=SequentialSampler(val_dataset), num_workers=4, pin_memory=True)
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=RandomSampler(train_dataset), num_workers=0, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=128, sampler=SequentialSampler(val_dataset), num_workers=0, pin_memory=True)
 
 # ---------------------------------------------------------
 # Model, Optimizer & Criterion
