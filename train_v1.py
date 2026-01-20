@@ -7,7 +7,6 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, time
 import matplotlib.pyplot as plt
 
-# 導入 Dataset 與模型定義
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
 from torch_plus.loss import TripletLoss
