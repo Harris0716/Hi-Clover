@@ -83,10 +83,10 @@ for epoch in range(args.epoch_training):
     model.train()
     running_loss, e_norms = 0.0, []
     
-    for i, (anchor, positive, negative) in enumerate(train_loader):
-        anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
+    for i, data in enumerate(train_loader):
+        a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
         optimizer.zero_grad()
-        a_out, p_out, n_out = model(anchor, positive, negative)
+        a_out, p_out, n_out = model(a, p, n)
         loss = criterion(a_out, p_out, n_out)
         loss.backward()
         
