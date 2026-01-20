@@ -115,6 +115,12 @@ for epoch in range(args.epoch_training):
         optimizer.step()
         running_loss += loss.item()
 
+        if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
+            with torch.no_grad(): 
+                d_ap = F.pairwise_distance(a_out, p_out).mean().item()
+                d_an = F.pairwise_distance(a_out, n_out).mean().item()
+            print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {d_ap:.4f}, d(a,n): {d_an:.4f}")
+        # ----------------------------
     # Validation Phase
     model.eval()
     val_loss_sum, c_ap, c_an = 0.0, [], []
@@ -145,6 +151,7 @@ for epoch in range(args.epoch_training):
     current_lr = optimizer.param_groups[0]['lr']
     scheduler.step(avg_v)
 
+    # 這裡的 Epoch Log 格式稍微精簡，保留重要資訊
     print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, LR: {current_lr:.6f}, Time: {time.time()-epoch_start:.2f}s")
 
     # Checkpoint Saving & Early Stopping
