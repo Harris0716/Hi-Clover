@@ -25,6 +25,7 @@ parser.add_argument('--epoch_enforced_training', type=int, default=20, help='Enf
 parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
 parser.add_argument('--seed', type=int, default=30004, help='Random seed')
 parser.add_argument('--mask', type=bool, default=False, help='Mask diagonal')
+parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
 parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
@@ -70,7 +71,8 @@ optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
-best_val_loss, prev_val_loss_sum = float('inf'), float('inf')
+best_val_loss = float('inf')
+patience_counter = 0 
 train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
@@ -125,17 +127,26 @@ for epoch in range(args.epoch_training):
 
     if avg_v < best_val_loss:
         best_val_loss = avg_v
+        patience_counter = 0
         torch.save(model.state_dict(), base_save_path + '_best.ckpt')
         best_ap_dist, best_an_dist = c_ap, c_an
-
-    # Early stopping check (v1 logic: 1.1 * prev_val_loss_sum)
-    if epoch >= args.epoch_enforced_training:
-        if val_loss_sum > 1.1 * prev_val_loss_sum:
-            print(f"Early stopping triggered at epoch {epoch+1}")
-            break
-        prev_val_loss_sum = val_loss_sum
     else:
-        prev_val_loss_sum = val_loss_sum
+        if epoch >= args.epoch_enforced_training:
+            patience_counter += 1
+            print(f"-> No improvement. Patience: {patience_counter}/{args.patience}")
+            
+            if patience_counter >= args.patience:
+                print(f"Early stopping triggered at epoch {epoch+1}")
+                break
+
+    # # Early stopping check (v1 logic: 1.1 * prev_val_loss_sum)
+    # if epoch >= args.epoch_enforced_training:
+    #     if val_loss_sum > 1.1 * prev_val_loss_sum:
+    #         print(f"Early stopping triggered at epoch {epoch+1}")
+    #         break
+    #     prev_val_loss_sum = val_loss_sum
+    # else:
+    #     prev_val_loss_sum = val_loss_sum
 
 # ---------------------------------------------------------
 # Visualization
