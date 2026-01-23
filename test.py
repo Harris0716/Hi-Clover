@@ -142,8 +142,8 @@ for subset in ["train_val", "test"]:
 
     # --- 1. Histogram (Improved Title) ---
     plt.figure(figsize=(9, 6))
-    plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Replicates (Same Condition)', alpha=0.5, color='#108690')
-    plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Conditions (Diff Condition)', alpha=0.5, color='#1D1E4E')
+    plt.hist(dist[lbl == 0], bins=data["hist_data"][2], density=True, label='Replicates', alpha=0.5, color='#108690')
+    plt.hist(dist[lbl == 1], bins=data["hist_data"][2], density=True, label='Conditions', alpha=0.5, color='#1D1E4E')
     plt.axvline(fixed_threshold, color='k', ls='--', label=f'Threshold ({fixed_threshold:.2f})')
     
     plt.title(f"Distance Distribution: {cell_title} ({subset_name})\n"
