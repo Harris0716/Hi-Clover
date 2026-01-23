@@ -1,3 +1,4 @@
+# All setting are same as Twins but using Triplet Network (baseline)
 import numpy as np
 import torch
 import torch.nn as nn
