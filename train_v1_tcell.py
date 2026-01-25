@@ -29,7 +29,7 @@ parser.add_argument('--outpath', type=str, default="outputs/", help='Output dire
 parser.add_argument('--seed', type=int, default=30004, help='Random seed')
 parser.add_argument('--mask', type=bool, default=False, help='Mask diagonal')
 parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
-parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
+# parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
