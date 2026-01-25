@@ -43,7 +43,7 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # parameters
 # ---------------------------------------------------------
-file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}"
 base_save_path = os.path.join(args.outpath, file_param_info)
 
 # ---------------------------------------------------------
@@ -162,7 +162,7 @@ fig1, ax = plt.subplots(1, 3, figsize=(18, 6))
 ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
 ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log(a_n/a_p))'); ax[1].axhline(0, color='k', ls='--')
 ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(1.0, color='r', ls='--')
-fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}"); save_fig(fig1, '_training_stats.pdf')
+fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate}"); save_fig(fig1, '_training_stats.pdf')
 
 # Figure 2: Distance Distribution
 fig2 = plt.figure(figsize=(10, 7))
