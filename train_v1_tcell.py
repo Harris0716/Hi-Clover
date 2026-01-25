@@ -1,6 +1,6 @@
 # All setting are same as Twins but using Triplet Network (baseline)
 # Add patience mechnism
-# Add soft margin triplet loss
+# Add SoftTripletLoss
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
-from torch_plus.loss import TripletLoss, soft_margin_triplet_loss
+from torch_plus.loss import TripletLoss, SoftTripletLoss
 from HiSiNet.reference_dictionaries import reference_genomes
 
 # ---------------------------------------------------------
@@ -68,7 +68,7 @@ val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(v
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-criterion = soft_margin_triplet_loss
+criterion = SoftTripletLoss()
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
 
 # ---------------------------------------------------------
