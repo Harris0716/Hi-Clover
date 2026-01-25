@@ -1,4 +1,5 @@
 # All setting are same as Twins but using Triplet Network (baseline)
+# Add patience mechnism
 import numpy as np
 import torch
 import torch.nn as nn
@@ -92,7 +93,7 @@ for epoch in range(args.epoch_training):
         loss = criterion(a_out, p_out, n_out)
         loss.backward()
         
-        # 紀錄梯度範數 (不影響 Adagrad 邏輯)
+        # record gradient norm (not affect Adagrad logic)
         grad_norm = nn.utils.clip_grad_norm_(model.parameters(), float('inf')).item()
         e_norms.append(grad_norm)
         
