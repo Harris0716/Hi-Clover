@@ -33,7 +33,7 @@ def test_triplet(model, dataloader, device):
     with torch.no_grad():
         for data in dataloader:
             o1, o2 = model.forward_one(data[0].to(device)), model.forward_one(data[1].to(device))
-            # 保持歐氏距離
+            # keep Euclidean distance
             distances.extend(F.pairwise_distance(o1, o2).cpu().numpy())
             labels.extend(data[2].numpy())
     return np.array(distances), np.array(labels)
@@ -66,7 +66,7 @@ m_dir, m_base = os.path.dirname(args.model_infile), os.path.basename(args.model_
 cell_name = args.data_inputs[0]
 cell_title = cell_name
 
-# 設定 Legend
+# set Legend
 if "NPC" in cell_name.upper():
     lgd = ["NPC Ctrl R1", "NPC Ctrl R2", "NPC Treat R1", "NPC Treat R2"]
 elif "NIPBL" in cell_name.upper():
@@ -74,14 +74,14 @@ elif "NIPBL" in cell_name.upper():
 else:
     lgd = [f"{cell_name} R1", f"{cell_name} R2", "Treat R1", "Treat R2"]
 
-# --- [改進] 解析檔名參數，讓標題更好讀 ---
-# 假設檔名格式: Model_LR_Batch_Seed_Margin...
+# --- [improve] parse the file name parameters, make the title better readable ---
+# assume the file name format: Model_LR_Batch_Seed_Margin...
 parts = m_base.replace('_best', '').split('_')
 if len(parts) >= 5:
-    # 嘗試自動解析常見格式
+    # try to automatically parse common formats
     param_info = f"Model: {parts[0]} | LR: {parts[1]} | Batch: {parts[2]} | Seed: {parts[3]} | Margin: {parts[4]}"
 else:
-    # 如果格式不符，則用預設顯示
+    # if the format does not match, use the default display
     param_info = m_base.replace('_best', '').replace('_', ' | ')
 # ---------------------------------------
 
@@ -104,7 +104,7 @@ for subset in ["train_val", "test"]:
     dist, lbl = test_triplet(model, DataLoader(ds, batch_size=128), device)
     data = calculate_metrics(dist, lbl, fixed_threshold=fixed_threshold)
 
-    # 抽樣計算 Embedding
+    # sample calculation of embeddings
     embs, detailed_lbls = [], []
     samples_per_file = max(1, 5000 // len(paths))
     with torch.no_grad():
@@ -125,7 +125,7 @@ for subset in ["train_val", "test"]:
 
     embs, detailed_lbls = np.array(embs), np.array(detailed_lbls)
     
-    # 計算二元輪廓係數
+    # calculate the binary silhouette coefficient
     binary_lbls = [0 if (l == 1 or l == 2) else 1 for l in detailed_lbls]
     sil_score = silhouette_score(embs, binary_lbls, metric='euclidean')
     

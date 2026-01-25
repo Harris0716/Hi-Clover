@@ -22,12 +22,12 @@ class TripletLoss(nn.Module):
 def soft_margin_triplet_loss(anchor, positive, negative):
     """
     Soft-Margin Triplet Loss
-    不需要設定 margin 參數，自動優化距離關係。
-    公式: log(1 + exp(d(a,p) - d(a,n)))
+    no need to set margin parameter, automatically optimize the distance relationship.
+    formula: log(1 + exp(d(a,p) - d(a,n)))
     """
     dist_ap = F.pairwise_distance(anchor, positive)
     dist_an = F.pairwise_distance(anchor, negative)
-    # 讓 (dist_ap - dist_an) 越小越好 (即 dist_an > dist_ap)
+    # make (dist_ap - dist_an) as small as possible (i.e. dist_an > dist_ap)
     loss = F.softplus(dist_ap - dist_an).mean()
     return loss
 

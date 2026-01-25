@@ -38,24 +38,22 @@ class TripletLeNet(TripletNet):
         # 修改點 1: 加入 BatchNorm2d
         self.features = nn.Sequential(
             nn.Conv2d(1, 6, 5, 1),
-            # nn.BatchNorm2d(6),      # <--- 新增這行
+            # nn.BatchNorm2d(6),      
             nn.GELU(),              
             nn.MaxPool2d(2, stride=2),
             
             nn.Conv2d(6, 16, 5, 1),
-            # nn.BatchNorm2d(16),     # <--- 新增這行
+            # nn.BatchNorm2d(16),     
             nn.GELU(),              
             nn.MaxPool2d(2, stride=2),
         )
         
-        # 修改點 2: 加入 BatchNorm1d
         self.linear = nn.Sequential(
             nn.Dropout(p=0.5),
             nn.Linear(16 * 61 * 61, 120),
-            # nn.BatchNorm1d(120),    # <--- 新增這行
+            # nn.BatchNorm1d(120),    
             nn.GELU(),
             nn.Linear(120, 83),
-            # 最後一層 Linear 後面通常不加 BN，因為接著要做 L2 Normalize
         )
         
         self._initialize_weights()
