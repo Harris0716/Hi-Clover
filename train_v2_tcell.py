@@ -2,7 +2,6 @@
 # Add patience mechnism
 # Add SoftTripletLoss
 # AdamW + Plateau Scheduler (reduce learning rate when validation loss plateaus)
-# Gradient Clipping
 
 import numpy as np
 import torch

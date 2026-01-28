@@ -1,5 +1,6 @@
 # All setting are same as Twins but using Triplet Network (baseline)
 # Add patience mechnism
+# hard margin triplet loss
 import numpy as np
 import torch
 import torch.nn as nn
