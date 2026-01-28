@@ -2,11 +2,14 @@
 # Add patience mechnism
 # hard margin triplet loss
 # Adagrad
+# ** Added Brightness Jitter for Data Augmentation **
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision.transforms as T
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, time
 import matplotlib.pyplot as plt
@@ -70,8 +73,15 @@ model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
 criterion = TripletLoss(margin=args.margin)
-# criterion = SemiHardTripletLoss(margin=0.5)
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
+
+# ---------------------------------------------------------
+# [新增] Data Augmentation Definition
+# ---------------------------------------------------------
+# brightness=0.2 代表亮度會在 [0.8, 1.2] 之間隨機變化
+# contrast=0.2 代表對比度會在 [0.8, 1.2] 之間隨機變化
+# 這模擬了定序深度 (Sequencing Depth) 的差異
+jitter_transform = T.ColorJitter(brightness=0.2, contrast=0.2)
 
 # ---------------------------------------------------------
 # Training Loop
@@ -81,7 +91,7 @@ patience_counter = 0
 train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
-print(f"Starting training: {file_param_info}")
+print(f"Starting training: {file_param_info} with Brightness Jitter")
 total_start_time = time.time()
 
 for epoch in range(args.epoch_training):
@@ -91,6 +101,14 @@ for epoch in range(args.epoch_training):
     
     for i, data in enumerate(train_loader):
         a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
+        
+        # --- [新增] Apply Random Brightness Jitter ---
+        # 只在訓練階段對 Tensor 進行隨機亮度調整
+        a = jitter_transform(a)
+        p = jitter_transform(p)
+        n = jitter_transform(n)
+        # -------------------------------------------
+
         optimizer.zero_grad()
         a_out, p_out, n_out = model(a, p, n)
         loss = criterion(a_out, p_out, n_out)
@@ -114,6 +132,7 @@ for epoch in range(args.epoch_training):
     with torch.no_grad():
         for data in val_loader:
             a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
+            # 驗證時不使用 Jitter，以保持評估標準一致
             ao, po, no = model(a, p, n)
             val_loss_sum += criterion(ao, po, no).item()
             c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
@@ -144,15 +163,6 @@ for epoch in range(args.epoch_training):
                 print(f"Early stopping triggered at epoch {epoch+1}")
                 break
 
-    # # Early stopping check (v1 logic: 1.1 * prev_val_loss_sum)
-    # if epoch >= args.epoch_enforced_training:
-    #     if val_loss_sum > 1.1 * prev_val_loss_sum:
-    #         print(f"Early stopping triggered at epoch {epoch+1}")
-    #         break
-    #     prev_val_loss_sum = val_loss_sum
-    # else:
-    #     prev_val_loss_sum = val_loss_sum
-
 # ---------------------------------------------------------
 # Visualization
 # ---------------------------------------------------------
@@ -164,7 +174,7 @@ fig1, ax = plt.subplots(1, 3, figsize=(18, 6))
 ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
 ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log(a_n/a_p))'); ax[1].axhline(0, color='k', ls='--')
 ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(1.0, color='r', ls='--')
-fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}"); save_fig(fig1, '_training_stats.pdf')
+fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin} | Jitter: True"); save_fig(fig1, '_training_stats.pdf')
 
 # Figure 2: Distance Distribution
 fig2 = plt.figure(figsize=(10, 7))
