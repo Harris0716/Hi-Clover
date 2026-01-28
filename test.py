@@ -94,7 +94,7 @@ fixed_threshold = calculate_metrics(v_dist, v_lbl)["intersect"]
 
 results = []
 for subset in ["train_val", "test"]:
-    subset_name = "TRAINING/VAL" if subset == "train_val" else "TESTING"
+    subset_name = "TRAIN/VAL" if subset == "train_val" else "TEST"
     print(f"\nStep 2: Processing {subset.upper()}...")
     
     paths = [p for d in args.data_inputs for p in (dataset_config[d]["training"] + dataset_config[d]["validation"] if subset == "train_val" else dataset_config[d]["test"])]
@@ -148,7 +148,7 @@ for subset in ["train_val", "test"]:
     
     plt.title(f"Distance Distribution: {cell_title} ({subset_name})\n"
               f"{param_info}\n"
-              f"Separation Index: {data['sep_index']:.4f} | Mean Accuracy: {mean_perf:.4f}", 
+              f"Separation Index: {data['sep_index']:.4f} | Mean Performance: {mean_perf:.4f}", 
               fontsize=12, fontweight='bold')
     
     plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
