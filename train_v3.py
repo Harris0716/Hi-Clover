@@ -41,28 +41,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-
-class SemiHardTripletLoss(nn.Module):
-    def __init__(self, margin=0.5):
-        super(SemiHardTripletLoss, self).__init__()
-        self.margin = margin
-
-    def forward(self, anchor, positive, negative):
-        # 1. calculate distance
-        d_ap = F.pairwise_distance(anchor, positive)
-        d_an = F.pairwise_distance(anchor, negative)
-        
-        # 2. calculate standard loss (filter out Easy Negatives)
-        loss = F.relu(d_ap - d_an + self.margin)
-        
-        # 3. Semi-Hard selection: ignore "too hard (Hard)" samples (d_an < d_ap)
-        # i.e. only keep samples with "negative distance > positive distance"
-        mask = (d_an > d_ap).float()
-        
-        # 4. apply mask and calculate average
-        loss = loss * mask
-        return loss.mean()
-
 # ---------------------------------------------------------
 # parameters
 # ---------------------------------------------------------
@@ -91,8 +69,8 @@ val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(v
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-# criterion = TripletLoss(margin=args.margin)
-criterion = SemiHardTripletLoss(margin=0.5)
+criterion = TripletLoss(margin=args.margin)
+# criterion = SemiHardTripletLoss(margin=0.5)
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
 
 # ---------------------------------------------------------
