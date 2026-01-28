@@ -91,7 +91,8 @@ val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(v
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-criterion = TripletLoss(margin=args.margin)
+# criterion = TripletLoss(margin=args.margin)
+criterion = SemiHardTripletLoss(margin=0.5)
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
 
 # ---------------------------------------------------------
