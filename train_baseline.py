@@ -2,6 +2,7 @@
 # Add patience mechnism
 # hard margin triplet loss
 # Adagrad
+# [Modified] Fixed GPU tensor error, added Gradient Clipping, NO Scheduler
 import numpy as np
 import torch
 import torch.nn as nn
@@ -73,6 +74,8 @@ if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 criterion = TripletLoss(margin=args.margin)
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
 
+# [NOTE] No Scheduler used (Standard Adagrad behavior)
+
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
@@ -96,9 +99,11 @@ for epoch in range(args.epoch_training):
         loss = criterion(a_out, p_out, n_out)
         loss.backward()
         
-        # record gradient norm (not affect Adagrad logic)
+        # [FIX] Gradient Clipping to prevent explosion on sensitive datasets (Liver/NPC)
         grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
-        e_norms.append(grad_norm)
+        
+        # [FIX] Use .item() to fix GPU->Numpy error
+        e_norms.append(grad_norm.item()) 
         
         optimizer.step()
         running_loss += loss.item()
@@ -126,7 +131,7 @@ for epoch in range(args.epoch_training):
     train_losses.append(running_loss / len(train_loader))
     val_losses.append(avg_v)
     val_log_ratio_history.append(l_ratio)
-    grad_norm_history.append(np.mean(e_norms))
+    grad_norm_history.append(np.mean(e_norms)) # Safe now (float list)
 
     print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
 
@@ -144,15 +149,6 @@ for epoch in range(args.epoch_training):
                 print(f"Early stopping triggered at epoch {epoch+1}")
                 break
 
-    # # Early stopping check (v1 logic: 1.1 * prev_val_loss_sum)
-    # if epoch >= args.epoch_enforced_training:
-    #     if val_loss_sum > 1.1 * prev_val_loss_sum:
-    #         print(f"Early stopping triggered at epoch {epoch+1}")
-    #         break
-    #     prev_val_loss_sum = val_loss_sum
-    # else:
-    #     prev_val_loss_sum = val_loss_sum
-
 # ---------------------------------------------------------
 # Visualization
 # ---------------------------------------------------------
@@ -163,7 +159,7 @@ def save_fig(fig, suffix):
 fig1, ax = plt.subplots(1, 3, figsize=(18, 6))
 ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
 ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log(a_n/a_p))'); ax[1].axhline(0, color='k', ls='--')
-ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(1.0, color='r', ls='--')
+ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(args.max_norm, color='r', ls='--')
 fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}"); save_fig(fig1, '_training_stats.pdf')
 
 # Figure 2: Distance Distribution
