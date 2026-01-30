@@ -31,6 +31,7 @@ parser.add_argument('--seed', type=int, default=30004, help='Random seed')
 parser.add_argument('--mask', type=bool, default=False, help='Mask diagonal')
 parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
 parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
+parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clipping max norm')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -96,7 +97,7 @@ for epoch in range(args.epoch_training):
         loss.backward()
         
         # record gradient norm (not affect Adagrad logic)
-        grad_norm = nn.utils.clip_grad_norm_(model.parameters(), float('inf')).item()
+        grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
         e_norms.append(grad_norm)
         
         optimizer.step()
