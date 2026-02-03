@@ -69,9 +69,9 @@ cell_title = cell_name
 # set Legend
 if "NPC" in cell_name.upper():
     lgd = ["NPC Ctrl R1", "NPC Ctrl R2", "NPC Treat (Aux) R1", "NPC Treat (Aux) R2"]
-elif "NIPBL" in cell_name.upper():
+elif "LIVER" in cell_name.upper():
     lgd = ["Liver NIPBL R1", "Liver NIPBL R2", "Liver TAM R1", "Liver TAM R2"]
-elif "TCells" in cell_name.upper():
+elif "TCELL" in cell_name.upper():
     lgd = ["TCells Ctrl (DP) R1", "TCells Ctrl (DP) R2", "TCells Treat (SP) R1", "TCells Treat (SP) R2"]
 else:
     lgd = [f"{cell_name} R1", f"{cell_name} R2", "Treat R1", "Treat R2"]
