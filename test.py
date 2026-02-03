@@ -158,18 +158,18 @@ for subset in ["train_val", "test"]:
 
     cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
 
-    # --- 2. t-SNE (Improved Title) ---
-    print(f"Calculating t-SNE for {subset}...")
-    res_tsne = TSNE(n_components=2, perplexity=40, random_state=42, early_exaggeration=20, metric='euclidean').fit_transform(embs)
-    plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
-    plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Sample ID")
-    
-    plt.title(f"Latent Space: t-SNE Projection | {cell_title} ({subset_name})\n"
-              f"{param_info}\n"
-              f"Silhouette Score: {sil_score:.4f}", 
-              fontsize=12, fontweight='bold')
-              
-    plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
+    # # --- 2. t-SNE (Improved Title) ---
+    # print(f"Calculating t-SNE for {subset}...")
+    # res_tsne = TSNE(n_components=2, perplexity=40, random_state=42, early_exaggeration=20, metric='euclidean').fit_transform(embs)
+    # plt.figure(figsize=(10, 8)); scat = plt.scatter(res_tsne[:,0], res_tsne[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
+    # plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Sample ID")
+    # 
+    # plt.title(f"Latent Space: t-SNE Projection | {cell_title} ({subset_name})\n"
+    #           f"{param_info}\n"
+    #           f"Silhouette Score: {sil_score:.4f}", 
+    #           fontsize=12, fontweight='bold')
+    #           
+    # plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
 
     # --- 3. UMAP (Improved Title) ---
     print(f"Calculating UMAP for {subset}...")
