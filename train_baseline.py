@@ -65,9 +65,9 @@ val_dataset = GroupedTripletHiCDataset([
 # 計算生成的triplets數量
 num_train_triplets = len(train_dataset)
 num_val_triplets = len(val_dataset)
-print(f"訓練集生成的triplets數量: {num_train_triplets:,}")
-print(f"驗證集生成的triplets數量: {num_val_triplets:,}")
-print(f"總共生成的triplets數量: {num_train_triplets + num_val_triplets:,}")
+print(f"num_train_triplets: {num_train_triplets:,}") 
+print(f"num_val_triplets: {num_val_triplets:,}") 
+print(f"total_num_triplets: {num_train_triplets + num_val_triplets:,}")
 
 train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=RandomSampler(train_dataset), num_workers=4, pin_memory=True)
 val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(val_dataset), num_workers=4, pin_memory=True)
