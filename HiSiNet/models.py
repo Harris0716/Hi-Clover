@@ -35,29 +35,37 @@ class TripletLeNet(TripletNet):
     def __init__(self, mask=False):
         super(TripletLeNet, self).__init__(mask=mask)
         
+        # [關鍵修正]：大幅增加通道數 (Width) 以解決欠擬合
+        # 目標：提升 Rep_Rate，讓模型有能力抓住 Replicates 間的細微相似處
         self.features = nn.Sequential(
-            nn.Conv2d(1, 6, 5, 1),
-            nn.BatchNorm2d(6),
+            # Layer 1: 1 -> 32 (原 6)
+            # 讓第一層能捕捉更多種基礎紋理
+            nn.Conv2d(1, 32, kernel_size=5, stride=1),
+            nn.BatchNorm2d(32),
             nn.GELU(),
             nn.MaxPool2d(2, stride=2),
             
-            nn.Conv2d(6, 16, 5, 1),
-            nn.BatchNorm2d(16),
+            # Layer 2: 32 -> 64 (原 16)
+            # 這是關鍵：GAP 前的特徵圖有 64 個 Channel
+            nn.Conv2d(32, 64, kernel_size=5, stride=1),
+            nn.BatchNorm2d(64),
             nn.GELU(),
             nn.MaxPool2d(2, stride=2),
             
-            # [修改點] 新增一層 AdaptiveAvgPool2d
-            # 這會把 (Batch, 16, 61, 61) 強制變成 (Batch, 16, 1, 1)
+            # GAP: 將 (B, 64, H, W) 壓縮成 (B, 64, 1, 1)
+            # 特徵向量長度從 16 變為 64，資訊量提升 4 倍
             nn.AdaptiveAvgPool2d((1, 1)) 
         )
         
         self.linear = nn.Sequential(
-            # 輸入維度瞬間變成只有 16！
-            nn.Linear(16, 120), 
-            nn.BatchNorm1d(120),
+            # 輸入維度 64
+            nn.Linear(64, 256),  # 中間層擴大到 256 以進行特徵組合
+            nn.BatchNorm1d(256),
             nn.GELU(),
-            nn.Dropout(p=0.5),
-            nn.Linear(120, 83),
+            nn.Dropout(p=0.4),   # 微調 Dropout，因為模型變大了，稍微降低一點保護
+            
+            # 輸出 Embedding 維度
+            nn.Linear(256, 128)  # 加大 Embedding 空間，讓樣本更好分
         )
         
         self._initialize_weights()
@@ -72,7 +80,7 @@ class TripletLeNet(TripletNet):
     def forward_one(self, x):
         x = self.mask_data(x)
         x = self.features(x)
-        x = x.view(x.size(0), -1) # 這裡 flatten 後只剩 16 維
+        x = x.view(x.size(0), -1) # Flatten 後是 64 維
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
