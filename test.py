@@ -24,6 +24,9 @@ parser.add_argument('model_name', type=str)
 parser.add_argument('json_file', type=str)
 parser.add_argument('model_infile', type=str)
 parser.add_argument('--mask', type=bool, default=True)
+# threshold_data: "val" = use validation only (current); "train_val" = use train+val for more stable intersect
+parser.add_argument('--threshold_data', type=str, default='val', choices=['val', 'train_val'],
+                    help='Data used to calibrate decision threshold (intersect). val=validation only; train_val=train+val for stabler PDF.')    
 parser.add_argument("data_inputs", nargs='+')
 args = parser.parse_args()
 
@@ -87,12 +90,18 @@ else:
     param_info = m_base.replace('_best', '').replace('_', ' | ')
 # ---------------------------------------
 
-print(f"Step 1: Calibrating Threshold from Validation ({cell_name})...")
-val_paths = [p for d in args.data_inputs for p in dataset_config[d]["validation"]]
-v_ds = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(p) for p in val_paths], 
+# Step 1: Calibrate threshold (intersect) from chosen data — val only vs train+val
+threshold_source = "Validation" if args.threshold_data == "val" else "Train+Val"
+print(f"Step 1: Calibrating Threshold from {threshold_source} ({cell_name})...")
+if args.threshold_data == "val":
+    cal_paths = [p for d in args.data_inputs for p in dataset_config[d]["validation"]]
+else:
+    cal_paths = [p for d in args.data_inputs for p in (dataset_config[d]["training"] + dataset_config[d]["validation"])]
+cal_ds = GroupedHiCDataset([SiameseHiCDataset([HiCDatasetDec.load(p) for p in cal_paths], 
                         reference=reference_genomes[dataset_config[args.data_inputs[0]]["reference"]])])
-v_dist, v_lbl = test_triplet(model, DataLoader(v_ds, batch_size=128), device)
-fixed_threshold = calculate_metrics(v_dist, v_lbl)["intersect"]
+cal_dist, cal_lbl = test_triplet(model, DataLoader(cal_ds, batch_size=128), device)
+fixed_threshold = calculate_metrics(cal_dist, cal_lbl)["intersect"]
+print(f"  -> Intersect (threshold) = {fixed_threshold:.4f} (from {threshold_source})")
 
 results = []
 for subset in ["train_val", "test"]:
@@ -134,6 +143,8 @@ for subset in ["train_val", "test"]:
     mean_perf = (data["rep_rate"] + data["cond_rate"]) / 2
     
     results.append({
+        "threshold_data": args.threshold_data,
+        "intersect": fixed_threshold,
         "set": subset, 
         "rep_rate": data["rep_rate"], 
         "cond_rate": data["cond_rate"], 
@@ -188,5 +199,6 @@ for subset in ["train_val", "test"]:
 # Output Summary 
 # ---------------------------------------------------------
 summary_df = pd.DataFrame(results)
-summary_df.to_csv(os.path.join(m_dir, f"{m_base}_performance_summary.csv"), index=False, float_format='%.4f')
-print(f"Evaluation Complete. CSV saved for {cell_name}.")
+out_csv = os.path.join(m_dir, f"{m_base}_performance_summary_threshold_{args.threshold_data}.csv")
+summary_df.to_csv(out_csv, index=False, float_format='%.4f')
+print(f"Evaluation Complete. CSV saved: {out_csv}")

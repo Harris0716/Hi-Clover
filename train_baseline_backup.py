@@ -1,12 +1,13 @@
 # All setting are same as Twins but using Triplet Network (baseline)
-# Add patience mechanism; optional AdamW + ReduceLROnPlateau (Adagrad: fixed LR only)
+# Add patience mechnism
 # hard margin triplet loss
+# Adagrad
+# [Modified] Fixed GPU tensor error, added Gradient Clipping, NO Scheduler
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, time
 import matplotlib.pyplot as plt
@@ -22,22 +23,16 @@ from HiSiNet.reference_dictionaries import reference_genomes
 parser = argparse.ArgumentParser(description='Triplet network (v1 logic with fixed naming)')
 parser.add_argument('model_name', type=str, help='Model from models.py')
 parser.add_argument('json_file', type=str, help='JSON dictionary with file paths')
-parser.add_argument('--optimizer', type=str, default='adagrad', choices=['adagrad', 'adamw'],
-                    help='adagrad: fixed LR. adamw: ReduceLROnPlateau adapts LR by val loss.')
-parser.add_argument('--learning_rate', type=float, default=0.01, help='LR (fixed for Adagrad; initial for AdamW then scheduler)')
-parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay (AdamW only)')
+parser.add_argument('learning_rate', type=float, help='Learning rate')
 parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
 parser.add_argument('--epoch_training', type=int, default=100, help='Max epochs')
 parser.add_argument('--epoch_enforced_training', type=int, default=20, help='Enforced epochs')
 parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
 parser.add_argument('--seed', type=int, default=30004, help='Random seed')
 parser.add_argument('--mask', type=bool, default=False, help='Mask diagonal')
-parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping (stop training)')
+parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
 parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
 parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clipping max norm')
-parser.add_argument('--lr_patience', type=int, default=4, help='Epochs without val improvement before reducing LR (AdamW only)')
-parser.add_argument('--lr_factor', type=float, default=0.5, help='LR multiplier when reducing (AdamW only)')
-parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum LR (AdamW only)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -51,7 +46,7 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # parameters
 # ---------------------------------------------------------
-file_param_info = f"{args.model_name}_{args.optimizer}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
 base_save_path = os.path.join(args.outpath, file_param_info)
 
 # ---------------------------------------------------------
@@ -84,19 +79,16 @@ model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
 criterion = TripletLoss(margin=args.margin)
-if args.optimizer == 'adagrad':
-    optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
-    scheduler = None
-else:
-    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
+optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
+
+# [NOTE] No Scheduler used (Standard Adagrad behavior)
 
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
 best_val_loss = float('inf')
-patience_counter = 0
-train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history = [], [], [], [], []
+patience_counter = 0 
+train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
 print(f"Starting training: {file_param_info}")
@@ -146,15 +138,9 @@ for epoch in range(args.epoch_training):
     train_losses.append(running_loss / len(train_loader))
     val_losses.append(avg_v)
     val_log_ratio_history.append(l_ratio)
-    grad_norm_history.append(np.mean(e_norms))
-    current_lr = optimizer.param_groups[0]['lr']
-    lr_history.append(current_lr)
+    grad_norm_history.append(np.mean(e_norms)) # Safe now (float list)
 
-    if scheduler is not None:
-        scheduler.step(avg_v)
-
-    lr_str = f", LR: {current_lr:.2e}" if scheduler else ""
-    print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}{lr_str}, Time: {time.time()-epoch_start:.2f}s")
+    print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
 
     if avg_v < best_val_loss:
         best_val_loss = avg_v
@@ -177,12 +163,11 @@ def save_fig(fig, suffix):
     plt.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(base_save_path + suffix, dpi=300); plt.close(fig)
 
 # Figure 1: Training Stats
-fig1, ax = plt.subplots(2, 2, figsize=(14, 10))
-ax[0, 0].plot(train_losses, label='Train'); ax[0, 0].plot(val_losses, label='Val'); ax[0, 0].set_title('Loss Evolution'); ax[0, 0].legend()
-ax[0, 1].plot(val_log_ratio_history, color='blue'); ax[0, 1].set_title('Log-Ratio (log(a_n/a_p))'); ax[0, 1].axhline(0, color='k', ls='--')
-ax[1, 0].plot(grad_norm_history, color='teal'); ax[1, 0].set_title('Gradient Norm'); ax[1, 0].axhline(args.max_norm, color='r', ls='--')
-ax[1, 1].semilogy(lr_history, color='green'); ax[1, 1].set_title('Learning Rate'); ax[1, 1].set_xlabel('Epoch')
-fig1.suptitle(f"Training Metrics | Model: {args.model_name} | {args.optimizer.upper()}\nLR: {args.learning_rate} | Margin: {args.margin}"); save_fig(fig1, '_training_stats.pdf')
+fig1, ax = plt.subplots(1, 3, figsize=(18, 6))
+ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
+ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log(a_n/a_p))'); ax[1].axhline(0, color='k', ls='--')
+ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(args.max_norm, color='r', ls='--')
+fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}"); save_fig(fig1, '_training_stats.pdf')
 
 # Figure 2: Distance Distribution
 fig2 = plt.figure(figsize=(10, 7))
