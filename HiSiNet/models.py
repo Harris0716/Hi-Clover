@@ -37,24 +37,26 @@ class TripletLeNet(TripletNet):
         
         self.features = nn.Sequential(
             nn.Conv2d(1, 6, 5, 1),
-            nn.BatchNorm2d(6),      # [修改 1] 啟用 BN，穩定卷積特徵
-            nn.GELU(),              
+            nn.BatchNorm2d(6),
+            nn.GELU(),
             nn.MaxPool2d(2, stride=2),
             
             nn.Conv2d(6, 16, 5, 1),
-            nn.BatchNorm2d(16),     # [修改 1] 啟用 BN
-            nn.GELU(),              
+            nn.BatchNorm2d(16),
+            nn.GELU(),
             nn.MaxPool2d(2, stride=2),
+            
+            # [修改點] 新增一層 AdaptiveAvgPool2d
+            # 這會把 (Batch, 16, 61, 61) 強制變成 (Batch, 16, 1, 1)
+            nn.AdaptiveAvgPool2d((1, 1)) 
         )
         
         self.linear = nn.Sequential(
-            nn.Dropout(p=0.5),      # 第一道防線：針對 59536 維輸入
-            nn.Linear(16 * 61 * 61, 120),
-            nn.BatchNorm1d(120),    # [修改 1] 啟用 BN，防止梯度消失/爆炸
+            # 輸入維度瞬間變成只有 16！
+            nn.Linear(16, 120), 
+            nn.BatchNorm1d(120),
             nn.GELU(),
-            
-            nn.Dropout(p=0.5),      # [修改 2] 關鍵新增：第二道防線，防止 120 維特徵過擬合
-            
+            nn.Dropout(p=0.5),
             nn.Linear(120, 83),
         )
         
@@ -70,7 +72,7 @@ class TripletLeNet(TripletNet):
     def forward_one(self, x):
         x = self.mask_data(x)
         x = self.features(x)
-        x = x.view(x.size(0), -1) 
+        x = x.view(x.size(0), -1) # 這裡 flatten 後只剩 16 維
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
