@@ -35,24 +35,26 @@ class TripletLeNet(TripletNet):
     def __init__(self, mask=False):
         super(TripletLeNet, self).__init__(mask=mask)
         
-        # 修改點 1: 加入 BatchNorm2d
         self.features = nn.Sequential(
             nn.Conv2d(1, 6, 5, 1),
-            # nn.BatchNorm2d(6),      
+            nn.BatchNorm2d(6),      # [修改 1] 啟用 BN，穩定卷積特徵
             nn.GELU(),              
             nn.MaxPool2d(2, stride=2),
             
             nn.Conv2d(6, 16, 5, 1),
-            # nn.BatchNorm2d(16),     
+            nn.BatchNorm2d(16),     # [修改 1] 啟用 BN
             nn.GELU(),              
             nn.MaxPool2d(2, stride=2),
         )
         
         self.linear = nn.Sequential(
-            nn.Dropout(p=0.5),
+            nn.Dropout(p=0.5),      # 第一道防線：針對 59536 維輸入
             nn.Linear(16 * 61 * 61, 120),
-            # nn.BatchNorm1d(120),    
+            nn.BatchNorm1d(120),    # [修改 1] 啟用 BN，防止梯度消失/爆炸
             nn.GELU(),
+            
+            nn.Dropout(p=0.5),      # [修改 2] 關鍵新增：第二道防線，防止 120 維特徵過擬合
+            
             nn.Linear(120, 83),
         )
         
