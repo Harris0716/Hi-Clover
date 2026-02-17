@@ -38,6 +38,7 @@ parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clippi
 parser.add_argument('--lr_patience', type=int, default=4, help='Epochs without val improvement before reducing LR (AdamW only)')
 parser.add_argument('--lr_factor', type=float, default=0.5, help='LR multiplier when reducing (AdamW only)')
 parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum LR (AdamW only)')
+parser.add_argument('--no_scheduler', action='store_true', help='AdamW only: use fixed LR (no ReduceLROnPlateau). Can reduce overfitting when val loss diverges from train.')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -51,7 +52,8 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # parameters
 # ---------------------------------------------------------
-file_param_info = f"{args.model_name}_{args.optimizer}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+_sch = "_nosch" if (args.optimizer == "adamw" and args.no_scheduler) else ""
+file_param_info = f"{args.model_name}_{args.optimizer}{_sch}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
 base_save_path = os.path.join(args.outpath, file_param_info)
 
 # ---------------------------------------------------------
@@ -89,7 +91,7 @@ if args.optimizer == 'adagrad':
     scheduler = None
 else:
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
+    scheduler = None if args.no_scheduler else ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
 
 # ---------------------------------------------------------
 # Training Loop
