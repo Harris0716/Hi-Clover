@@ -8,310 +8,236 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, time
 import matplotlib.pyplot as plt
 
+# 專案模組
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
-from torch_plus.loss import TripletLoss
+# from torch_plus.loss import TripletLoss # 這裡不需要引用外部 loss，因為我們手寫 Hard Mining
+
+# 引入 reference (根據您的環境配置)
 from HiSiNet.reference_dictionaries import reference_genomes
 
-# ==========================================================================================
-# [Class Definition] Online Hard Negative Mining Loss
-# ==========================================================================================
-class OnlineHardTripletLoss(nn.Module):
-    def __init__(self, margin=1.0, epsilon=1e-16):
-        super(OnlineHardTripletLoss, self).__init__()
-        self.margin = margin
-        self.epsilon = epsilon
-
-    def forward(self, anchor, positive, negative):
-        # 1. 計算歐式距離 (Euclidean Distance)
-        d_ap = F.pairwise_distance(anchor, positive, p=2)
-        d_an = F.pairwise_distance(anchor, negative, p=2)
-
-        # 2. 計算每個樣本的原始 Loss
-        # F.relu 將滿足 Margin (簡單樣本) 的 Loss 歸零
-        loss_per_sample = F.relu(d_ap - d_an + self.margin)
-
-        # 3. 篩選困難樣本 (Hard Sample Selection)
-        # mask 為布林值，標記哪些樣本是困難的 (Loss > 0)
-        mask_hard = loss_per_sample > self.epsilon
-        hard_loss = loss_per_sample[mask_hard]
-
-        # 4. 計算最終 Loss (僅對困難樣本取平均)
-        if hard_loss.numel() > 0:
-            loss = hard_loss.mean()
-        else:
-            # 極少見情況：Batch 內所有樣本都已經完美分開
-            loss = loss_per_sample.mean() # 實際上是 0.0
-
-        # 計算統計資訊供監控
-        hard_ratio = mask_hard.float().mean() # 該 Batch 中有多少比例是困難樣本
-        
-        return loss, hard_ratio, d_ap.mean(), d_an.mean()
-
-# ==========================================================================================
-# Argument Parser
-# ==========================================================================================
-parser = argparse.ArgumentParser(description='Triplet Network with Online Hard Negative Mining')
-parser.add_argument('model_name', type=str, help='Model name defined in models.py')
-parser.add_argument('json_file', type=str, help='Path to JSON config')
-parser.add_argument('--optimizer', type=str, default='adamw', choices=['adagrad', 'adamw'], help='Optimizer selection')
-parser.add_argument('--learning_rate', type=float, default=0.0005, help='Initial learning rate')
-parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weight decay for AdamW')
-parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
-parser.add_argument('--epoch_training', type=int, default=150, help='Max training epochs')
-parser.add_argument('--epoch_enforced_training', type=int, default=30, help='Minimum training epochs')
-parser.add_argument('--patience', type=int, default=20, help='Early stopping patience')
-parser.add_argument('--margin', type=float, default=0.3, help='Margin for triplet loss')
-parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clipping norm')
-parser.add_argument('--lr_patience', type=int, default=5, help='LR scheduler patience')
-parser.add_argument('--lr_factor', type=float, default=0.5, help='LR decay factor')
-parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum learning rate')
-parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
-parser.add_argument('--seed', type=int, default=42, help='Random seed')
-parser.add_argument('--mask', type=str, default="true", help='Mask diagonal (true/false string)') # 修正布林值解析問題
-parser.add_argument('--no_scheduler', action='store_true', help='Disable LR scheduler')
-parser.add_argument("data_inputs", nargs='+', help="Data keys from JSON")
+# ---------------------------------------------------------
+# 1. 參數設定 (Arguments)
+# ---------------------------------------------------------
+parser = argparse.ArgumentParser(description='Robust Triplet Training with Hard Mining')
+parser.add_argument('model_name', type=str)
+parser.add_argument('json_file', type=str)
+parser.add_argument('--optimizer', type=str, default='adamw')
+parser.add_argument('--learning_rate', type=float, default=0.0005)
+parser.add_argument('--weight_decay', type=float, default=0.001)
+parser.add_argument('--batch_size', type=int, default=128)
+parser.add_argument('--epoch_training', type=int, default=150)
+parser.add_argument('--epoch_enforced_training', type=int, default=30)
+parser.add_argument('--patience', type=int, default=20)
+parser.add_argument('--margin', type=float, default=0.3)
+parser.add_argument('--max_norm', type=float, default=1.0)
+parser.add_argument('--outpath', type=str, default="outputs/")
+parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--mask', type=str, default="true")
+parser.add_argument("data_inputs", nargs='+')
 
 args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
-
-# 處理 mask 參數 (argparse 傳遞布林值的小技巧)
-mask_flag = args.mask.lower() == 'true'
-
-# Device & Optimization
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# 開啟 CuDNN Benchmark 以加速固定尺寸輸入的卷積運算
 if torch.cuda.is_available():
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = True # 加速固定輸入尺寸的運算
 
+# 設定隨機種子以確保實驗可重現
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-# ==========================================================================================
-# Parameters & Logging
-# ==========================================================================================
-_sch = "_nosch" if (args.optimizer == "adamw" and args.no_scheduler) else ""
-file_param_info = f"{args.model_name}_{args.optimizer}{_sch}_HardMining_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
-base_save_path = os.path.join(args.outpath, file_param_info)
+# ---------------------------------------------------------
+# 2. 資料讀取 (Data Loading)
+# ---------------------------------------------------------
+with open(args.json_file) as f: config = json.load(f)
 
-# ==========================================================================================
-# Data Loading
-# ==========================================================================================
-with open(args.json_file) as f: dataset_config = json.load(f)
-
-# 建構 Dataset
-train_datasets = []
-val_datasets = []
+train_sets, val_sets = [], []
 for n in args.data_inputs:
-    # Training Data
-    train_hic_list = [HiCDatasetDec.load(p) for p in dataset_config[n]["training"]]
-    train_datasets.append(TripletHiCDataset(train_hic_list, reference=reference_genomes[dataset_config[n]["reference"]]))
-    # Validation Data
-    val_hic_list = [HiCDatasetDec.load(p) for p in dataset_config[n]["validation"]]
-    val_datasets.append(TripletHiCDataset(val_hic_list, reference=reference_genomes[dataset_config[n]["reference"]]))
+    ref = reference_genomes[config[n]["reference"]]
+    train_sets.append(TripletHiCDataset([HiCDatasetDec.load(p) for p in config[n]["training"]], reference=ref))
+    val_sets.append(TripletHiCDataset([HiCDatasetDec.load(p) for p in config[n]["validation"]], reference=ref))
 
-train_dataset = GroupedTripletHiCDataset(train_datasets)
-val_dataset = GroupedTripletHiCDataset(val_datasets)
+# 使用 GroupedTripletHiCDataset 整合多個來源
+train_loader = DataLoader(GroupedTripletHiCDataset(train_sets), batch_size=args.batch_size, 
+                          sampler=RandomSampler(GroupedTripletHiCDataset(train_sets)), 
+                          num_workers=4, pin_memory=True)
 
-print(f"Num Train Triplets: {len(train_dataset):,}") 
-print(f"Num Val Triplets: {len(val_dataset):,}")
+val_loader = DataLoader(GroupedTripletHiCDataset(val_sets), batch_size=100, 
+                        sampler=SequentialSampler(GroupedTripletHiCDataset(val_sets)), 
+                        num_workers=4, pin_memory=True)
 
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=RandomSampler(train_dataset), num_workers=4, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(val_dataset), num_workers=4, pin_memory=True)
+# ---------------------------------------------------------
+# 3. 模型與優化器 (Model & Optimizer)
+# ---------------------------------------------------------
+# 解析 mask 參數
+mask_bool = args.mask.lower() == 'true'
+model = eval("models." + args.model_name)(mask=mask_bool).to(device)
 
-# ==========================================================================================
-# Model, Loss & Optimizer
-# ==========================================================================================
-model = eval("models." + args.model_name)(mask=mask_flag).to(device)
-if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
+if torch.cuda.device_count() > 1: 
+    model = nn.DataParallel(model)
 
-# 初始化自定義 Loss
-criterion_train = OnlineHardTripletLoss(margin=args.margin).to(device)
-# 驗證時通常使用標準平均 Loss 以評估整體分佈，但也可以參考 Hard Ratio
-criterion_val = TripletLoss(margin=args.margin).to(device) # 這是您原本的 Loss 函數
-
-if args.optimizer == 'adagrad':
+# 根據需求選擇優化器
+if args.optimizer == 'adamw':
+    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+else:
     optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
     scheduler = None
-else:
-    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    scheduler = None if args.no_scheduler else ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
 
-# ==========================================================================================
-# Training Loop
-# ==========================================================================================
+# ---------------------------------------------------------
+# 4. 訓練流程 (Training Loop)
+# ---------------------------------------------------------
+base_path = os.path.join(args.outpath, f"{args.model_name}_{args.optimizer}_HardMining")
 best_val_loss = float('inf')
-patience_counter = 0
-history = {
-    'train_loss': [], 'val_loss': [], 'log_ratio': [], 
-    'grad_norm': [], 'lr': [], 'hard_ratio': []
-}
+patience_cnt = 0
+history = {'loss': [], 'val_loss': [], 'intersect': [], 'hard_ratio': []}
 best_dist = {'ap': [], 'an': []}
 
-print(f"Starting Training: {file_param_info}")
-print(f"Config: Hard Mining enabled, Margin={args.margin}")
-total_start_time = time.time()
+print(f"Start Training: {base_path}")
+print(f"Configs: Margin={args.margin}, LR={args.learning_rate}, Batch={args.batch_size}")
+
+start_time = time.time()
 
 try:
     for epoch in range(args.epoch_training):
-        epoch_start = time.time()
+        # ------------------ Training Phase ------------------
         model.train()
+        run_loss, run_hard_ratio = 0.0, 0.0
         
-        # Accumulators
-        run_loss = 0.0
-        run_hard_ratio = 0.0
-        run_d_ap = 0.0
-        run_d_an = 0.0
-        grad_norms = []
-        
-        num_batches = len(train_loader)
-        
-        for i, (a, p, n) in enumerate(train_loader):
-            a, p, n = a.to(device), p.to(device), n.to(device)
+        # 用於收集 "Train + Val" 的所有距離數據
+        all_ap, all_an = [], []
+
+        for i, batch in enumerate(train_loader):
+            # [安全拆解] 確保只取前三個 Tensor，避免 ValueError
+            a, p, n = batch[0].to(device), batch[1].to(device), batch[2].to(device)
             
             optimizer.zero_grad()
-            
-            # Forward
             a_out, p_out, n_out = model(a, p, n)
             
-            # Loss Calculation (Using Hard Mining Class)
-            loss, hard_ratio, d_ap_mean, d_an_mean = criterion_train(a_out, p_out, n_out)
+            # --- Inline Hard Mining Logic ---
+            d_ap = F.pairwise_distance(a_out, p_out)
+            d_an = F.pairwise_distance(a_out, n_out)
+            
+            # 計算 Loss: 只取大於 0 的部分 (Violated Margin)
+            loss_val = F.relu(d_ap - d_an + args.margin)
+            mask = loss_val > 1e-16
+            
+            # 如果有困難樣本，只對困難樣本取平均；否則對全體取平均(通常為0)
+            loss = loss_val[mask].mean() if mask.any() else loss_val.mean()
             
             loss.backward()
-            
-            # Gradient Clipping
-            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
-            grad_norms.append(grad_norm.item())
-            
+            nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
             optimizer.step()
             
-            # Statistics
+            # 記錄數據
             run_loss += loss.item()
-            run_hard_ratio += hard_ratio.item()
-            run_d_ap += d_ap_mean.item()
-            run_d_an += d_an_mean.item()
+            run_hard_ratio += mask.float().mean().item()
+            
+            # 收集訓練集距離 (轉回 CPU 存入 list)
+            all_ap.extend(d_ap.detach().cpu().numpy())
+            all_an.extend(d_an.detach().cpu().numpy())
 
-            # Logging every 100 steps
-            if (i + 1) % 100 == 0 or (i + 1) == num_batches:
-                avg_loss = run_loss / (i + 1)
-                avg_hr = (run_hard_ratio / (i + 1)) * 100 # Percentage
-                print(f"Epoch [{epoch+1}/{args.epoch_training}] Step [{i+1}/{num_batches}] | "
-                      f"Loss: {avg_loss:.4f} | Hard%: {avg_hr:.1f}% | "
-                      f"d(a,p): {run_d_ap/(i+1):.3f} | d(a,n): {run_d_an/(i+1):.3f}")
-
-        # ================= Validation =================
+        # ------------------ Validation Phase ------------------
         model.eval()
-        val_loss_accum = 0.0
-        c_ap, c_an = [], []
-        
+        val_loss_sum = 0.0
         with torch.no_grad():
-            for a, p, n in val_loader:
-                a, p, n = a.to(device), p.to(device), n.to(device)
-                ao, po, no = model(a, p, n)
+            for batch in val_loader:
+                a, p, n = batch[0].to(device), batch[1].to(device), batch[2].to(device)
+                a_out, p_out, n_out = model(a, p, n)
                 
-                # 計算標準驗證 Loss (平均)
-                val_loss_accum += criterion_val(ao, po, no).item()
+                # Validation 使用標準平均 Loss 評估
+                d_ap_v = F.pairwise_distance(a_out, p_out)
+                d_an_v = F.pairwise_distance(a_out, n_out)
+                val_loss_sum += F.relu(d_ap_v - d_an_v + args.margin).mean().item()
                 
-                # 收集距離分佈
-                c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
-                c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
-        
-        # Metrics Calculation
-        avg_val_loss = val_loss_accum / len(val_loader)
-        avg_ap = np.mean(c_ap)
-        avg_an = np.mean(c_an)
-        log_ratio = np.log10((avg_an + 1e-6) / (avg_ap + 1e-6))
-        
-        # Current LR
-        current_lr = optimizer.param_groups[0]['lr']
-        if scheduler: scheduler.step(avg_val_loss)
+                # 收集驗證集距離 (加入同一個 list)
+                all_ap.extend(d_ap_v.cpu().numpy())
+                all_an.extend(d_an_v.cpu().numpy())
 
-        # Update History
-        history['train_loss'].append(run_loss / num_batches)
+        # ------------------ Metrics Calculation ------------------
+        avg_loss = run_loss / len(train_loader)
+        avg_val_loss = val_loss_sum / len(val_loader)
+        avg_hard = (run_hard_ratio / len(train_loader)) * 100
+        
+        # [修正後的核心邏輯] 計算 PDF Intersection
+        # 1. 轉換為 Numpy Array
+        np_ap = np.array(all_ap)
+        np_an = np.array(all_an)
+        
+        # 2. 決定共同的 Range (涵蓋正負樣本的全域範圍)
+        # 這是避免直方圖截斷的關鍵
+        global_min = min(np_ap.min(), np_an.min())
+        global_max = max(np_ap.max(), np_an.max())
+        
+        # 3. 在相同 Range 下計算直方圖 (密度函數)
+        hist_p, edges = np.histogram(np_ap, bins=100, range=(global_min, global_max), density=True)
+        hist_n, _ = np.histogram(np_an, bins=100, range=(global_min, global_max), density=True)
+        
+        # 4. 計算交集面積: sum(min(P, N)) * bin_width
+        bin_width = edges[1] - edges[0]
+        intersect = np.sum(np.minimum(hist_p, hist_n)) * bin_width
+
+        # ------------------ Logging & Checkpoint ------------------
+        # 更新 LR
+        curr_lr = optimizer.param_groups[0]['lr']
+        if scheduler: 
+            scheduler.step(avg_val_loss)
+
+        print(f"Epoch [{epoch+1}/{args.epoch_training}] "
+              f"Loss: {avg_loss:.4f} | Val: {avg_val_loss:.4f} | "
+              f"Hard%: {avg_hard:.1f}% | Intersect: {intersect:.4f} | LR: {curr_lr:.2e}")
+
+        history['loss'].append(avg_loss)
         history['val_loss'].append(avg_val_loss)
-        history['log_ratio'].append(log_ratio)
-        history['grad_norm'].append(np.mean(grad_norms))
-        history['lr'].append(current_lr)
-        history['hard_ratio'].append(run_hard_ratio / num_batches)
+        history['intersect'].append(intersect)
+        history['hard_ratio'].append(avg_hard)
 
-        # Print Epoch Summary
-        epoch_time = time.time() - epoch_start
-        print(f"Epoch [{epoch+1}] Result: Val Loss: {avg_val_loss:.4f} | Log-Ratio: {log_ratio:.4f} | "
-              f"LR: {current_lr:.2e} | Time: {epoch_time:.1f}s")
-        print("-" * 80)
-
-        # Checkpoint & Early Stopping
+        # 儲存策略：以 Val Loss 為準 (確保模型泛化能力)
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            patience_counter = 0
-            torch.save(model.state_dict(), base_save_path + '_best.ckpt')
-            best_dist['ap'] = c_ap
-            best_dist['an'] = c_an
+            patience_cnt = 0
+            torch.save(model.state_dict(), base_path + '_best.ckpt')
+            best_dist['ap'], best_dist['an'] = list(np_ap), list(np_an)
         else:
             if epoch >= args.epoch_enforced_training:
-                patience_counter += 1
-                print(f"Early Stopping Counter: {patience_counter}/{args.patience}")
-                if patience_counter >= args.patience:
-                    print(f"Early stopping triggered at Epoch {epoch+1}")
+                patience_cnt += 1
+                if patience_cnt >= args.patience:
+                    print(f"Early Stopping Triggered at Epoch {epoch+1}")
                     break
 
 except KeyboardInterrupt:
     print("\nTraining interrupted by user.")
 
-# ==========================================================================================
-# Visualization
-# ==========================================================================================
-finally:
-    def save_plot(fig, name):
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
-        path = base_save_path + name
-        fig.savefig(path, dpi=300)
-        plt.close(fig)
-        print(f"Saved plot: {path}")
+# ---------------------------------------------------------
+# 5. 結果視覺化 (Visualization)
+# ---------------------------------------------------------
+print("Saving visualization...")
+fig, ax = plt.subplots(2, 2, figsize=(14, 10))
 
-    if history['train_loss']:
-        # Plot 1: Loss & Log-Ratio
-        fig1, ax = plt.subplots(2, 2, figsize=(14, 10))
-        
-        # Loss
-        ax[0, 0].plot(history['train_loss'], label='Train (Hard Mining)')
-        ax[0, 0].plot(history['val_loss'], label='Val (Standard)')
-        ax[0, 0].set_title('Loss History')
-        ax[0, 0].set_xlabel('Epoch')
-        ax[0, 0].legend()
-        ax[0, 0].grid(True, alpha=0.3)
-        
-        # Log Ratio
-        ax[0, 1].plot(history['log_ratio'], color='blue')
-        ax[0, 1].set_title('Log-Ratio (Separation Index)')
-        ax[0, 1].axhline(0, color='k', linestyle='--')
-        ax[0, 1].grid(True, alpha=0.3)
-        
-        # Hard Ratio & Grad Norm
-        ax[1, 0].plot(history['hard_ratio'], color='orange')
-        ax[1, 0].set_title('Hard Sample Ratio (Difficulty)')
-        ax[1, 0].set_ylim(0, 1.0)
-        ax[1, 0].set_ylabel('Ratio (0-1)')
-        ax[1, 0].grid(True, alpha=0.3)
-        
-        # Learning Rate
-        ax[1, 1].semilogy(history['lr'], color='green')
-        ax[1, 1].set_title('Learning Rate')
-        ax[1, 1].grid(True, alpha=0.3)
-        
-        fig1.suptitle(f"Training Metrics | {args.model_name} | Hard Mining (m={args.margin})")
-        save_plot(fig1, '_metrics.pdf')
+# Loss Curve
+ax[0, 0].plot(history['loss'], label='Train (Hard)')
+ax[0, 0].plot(history['val_loss'], label='Val (Avg)')
+ax[0, 0].set_title('Loss Evolution')
+ax[0, 0].legend()
 
-    if best_dist['ap'] and best_dist['an']:
-        # Plot 2: Distance Distribution
-        fig2 = plt.figure(figsize=(10, 7))
-        plt.hist(best_dist['ap'], bins=50, alpha=0.6, label='Positive Dist', color='g', density=True)
-        plt.hist(best_dist['an'], bins=50, alpha=0.6, label='Negative Dist', color='r', density=True)
-        plt.axvline(args.margin, color='k', linestyle='--', label=f'Margin ({args.margin})')
-        plt.title(f"Distance Distribution (Best Model)\n{file_param_info}")
-        plt.xlabel('Euclidean Distance')
-        plt.legend()
-        save_plot(fig2, '_dist_hist.pdf')
+# Intersection Score (Train+Val)
+ax[0, 1].plot(history['intersect'], color='purple')
+ax[0, 1].set_title('PDF Intersection Area (Train+Val)')
+ax[0, 1].set_ylabel('Area (lower is better)')
 
-    total_time = (time.time() - total_start_time) / 60
-    print(f"Experiment finished in {total_time:.2f} minutes.")
+# Hard Ratio
+ax[1, 0].plot(history['hard_ratio'], color='orange')
+ax[1, 0].set_title('Hard Sample Ratio (%)')
+
+# Distance Distribution (Best Model)
+if len(best_dist['ap']) > 0:
+    ax[1, 1].hist(best_dist['ap'], bins=100, alpha=0.6, label='Pos', density=True, color='g')
+    ax[1, 1].hist(best_dist['an'], bins=100, alpha=0.6, label='Neg', density=True, color='r')
+    ax[1, 1].axvline(args.margin, color='k', linestyle='--', label=f'Margin {args.margin}')
+    ax[1, 1].set_title(f'Dist Distribution (Best)\nIntersect: {min(history["intersect"]):.4f}')
+    ax[1, 1].legend()
+
+plt.tight_layout()
+plt.savefig(base_path + '_result.pdf')
+print(f"Done. Results saved to {base_path}_result.pdf")
+print(f"Total time: {(time.time() - start_time)/60:.1f} mins")
