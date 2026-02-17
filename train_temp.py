@@ -87,16 +87,20 @@ base_path = os.path.join(args.outpath, file_info)
 best_val_loss = float('inf')
 patience_cnt = 0
 train_losses, val_losses = [], []
+val_log_ratio_history, grad_norm_history, lr_history = [], [], []
+best_ap_dist, best_an_dist = [], []
 
 print(f"Start Training: {base_path}")
 print(f"Config: Hard Mining (Margin={args.margin}), Unpack-Safe, Fast-Mode")
+total_start_time = time.time()
 
 try:
     for epoch in range(args.epoch_training):
         epoch_start = time.time()
         model.train()
         running_loss = 0.0
-        
+        e_norms = []
+
         # [安全修正] 使用 enumerate 並且不直接 unpack
         for i, batch_data in enumerate(train_loader):
             # [安全修正] 強制只取前三個 Tensor，忽略可能的 index/label
@@ -128,7 +132,8 @@ try:
             # -------------------------------------------------
 
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
+            e_norms.append(grad_norm.item())
             optimizer.step()
             
             running_loss += loss.item()
@@ -141,6 +146,7 @@ try:
         # Validation
         model.eval()
         val_loss_sum = 0.0
+        c_ap, c_an = [], []
         with torch.no_grad():
             for batch_data in val_loader:
                 # [安全修正] 驗證集也要安全 unpack
@@ -154,25 +160,33 @@ try:
                 d_ap_v = F.pairwise_distance(ao, po)
                 d_an_v = F.pairwise_distance(ao, no)
                 val_loss_sum += F.relu(d_ap_v - d_an_v + args.margin).mean().item()
+                c_ap.extend(d_ap_v.cpu().numpy())
+                c_an.extend(d_an_v.cpu().numpy())
         
         avg_train_loss = running_loss / len(train_loader)
         avg_val_loss = val_loss_sum / len(val_loader)
+        avg_ap, avg_an = np.mean(c_ap), np.mean(c_an)
+        l_ratio = np.log10((avg_an + 1e-6) / (avg_ap + 1e-6))
         
         # LR Update
         curr_lr = optimizer.param_groups[0]['lr']
         if scheduler: scheduler.step(avg_val_loss)
 
-        print(f"Epoch [{epoch+1}] Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | "
-              f"LR: {curr_lr:.2e} | Time: {time.time()-epoch_start:.1f}s")
-        
         train_losses.append(avg_train_loss)
         val_losses.append(avg_val_loss)
+        val_log_ratio_history.append(l_ratio)
+        grad_norm_history.append(np.mean(e_norms))
+        lr_history.append(curr_lr)
+
+        print(f"Epoch [{epoch+1}] Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | "
+              f"Log-Ratio: {l_ratio:.4f} | LR: {curr_lr:.2e} | Time: {time.time()-epoch_start:.1f}s")
 
         # Checkpoint
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             patience_cnt = 0
             torch.save(model.state_dict(), base_path + '_best.ckpt')
+            best_ap_dist, best_an_dist = list(c_ap), list(c_an)
         else:
             if epoch >= args.epoch_enforced_training:
                 patience_cnt += 1
@@ -183,13 +197,59 @@ try:
 except KeyboardInterrupt:
     print("\nInterrupted.")
 
-# Visualization
+# ---------------------------------------------------------
+# Visualization (含 early stop / Ctrl+C 後仍會執行)
+# ---------------------------------------------------------
 finally:
+    def save_fig(fig, suffix):
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        fig.savefig(base_path + suffix, dpi=300)
+        plt.close(fig)
+
     if train_losses:
-        plt.figure(figsize=(10, 5))
+        # Figure 1: 四格監測圖 (Loss、Log-Ratio、Gradient Norm、Learning Rate)
+        fig1, ax = plt.subplots(2, 2, figsize=(14, 10))
+        ax[0, 0].plot(train_losses, label='Train')
+        ax[0, 0].plot(val_losses, label='Val')
+        ax[0, 0].set_title('Loss Evolution')
+        ax[0, 0].legend()
+        ax[0, 0].set_xlabel('Epoch')
+
+        ax[0, 1].plot(val_log_ratio_history, color='blue')
+        ax[0, 1].set_title('Embedding Separation (log₁₀ d(a,n)/d(a,p))')
+        ax[0, 1].axhline(0, color='k', ls='--')
+        ax[0, 1].set_xlabel('Epoch')
+
+        ax[1, 0].plot(grad_norm_history, color='teal')
+        ax[1, 0].set_title('Gradient Norm (Stability)')
+        ax[1, 0].axhline(args.max_norm, color='r', ls='--')
+        ax[1, 0].set_xlabel('Epoch')
+
+        ax[1, 1].semilogy(lr_history, color='green')
+        ax[1, 1].set_title('Learning Rate')
+        ax[1, 1].set_xlabel('Epoch')
+
+        fig1.suptitle(f"Hard Mining Training Metrics | {args.model_name} | Margin={args.margin}")
+        save_fig(fig1, '_training_stats.pdf')
+        print(f"Saved: {base_path}_training_stats.pdf")
+
+        # 保留原本單一 Loss 圖（可選）
+        fig_loss = plt.figure(figsize=(10, 5))
         plt.plot(train_losses, label='Train')
         plt.plot(val_losses, label='Val')
         plt.title(f"Loss Curve (Margin {args.margin})")
         plt.legend()
-        plt.savefig(base_path + '_loss.pdf')
-        print("Done.")
+        plt.xlabel('Epoch')
+        save_fig(fig_loss, '_loss.pdf')
+
+    if best_ap_dist and best_an_dist:
+        fig2 = plt.figure(figsize=(10, 7))
+        plt.hist(best_ap_dist, bins=50, alpha=0.6, label='Positives d(a,p)', color='g', density=True)
+        plt.hist(best_an_dist, bins=50, alpha=0.6, label='Negatives d(a,n)', color='r', density=True)
+        plt.title(f"Best Model: Validation Distance Distribution | {file_info}")
+        plt.legend()
+        plt.xlabel('Distance')
+        save_fig(fig2, '_val_dist_hist.pdf')
+        print(f"Saved: {base_path}_val_dist_hist.pdf")
+
+    print(f"Done. Total Time: {(time.time() - total_start_time) / 60:.2f} mins")
