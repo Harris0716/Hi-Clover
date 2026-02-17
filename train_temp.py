@@ -8,18 +8,15 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, time
 import matplotlib.pyplot as plt
 
-# 專案模組
+# 引入專案模組
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
-# from torch_plus.loss import TripletLoss # 這裡不需要引用外部 loss，因為我們手寫 Hard Mining
-
-# 引入 reference (根據您的環境配置)
 from HiSiNet.reference_dictionaries import reference_genomes
 
 # ---------------------------------------------------------
-# 1. 參數設定 (Arguments)
+# Argument Parser
 # ---------------------------------------------------------
-parser = argparse.ArgumentParser(description='Robust Triplet Training with Hard Mining')
+parser = argparse.ArgumentParser(description='Triplet Hard Mining (Fast & Robust)')
 parser.add_argument('model_name', type=str)
 parser.add_argument('json_file', type=str)
 parser.add_argument('--optimizer', type=str, default='adamw')
@@ -28,8 +25,8 @@ parser.add_argument('--weight_decay', type=float, default=0.001)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--epoch_training', type=int, default=150)
 parser.add_argument('--epoch_enforced_training', type=int, default=30)
-parser.add_argument('--patience', type=int, default=20)
-parser.add_argument('--margin', type=float, default=0.3)
+parser.add_argument('--patience', type=int, default=30)
+parser.add_argument('--margin', type=float, default=0.5)
 parser.add_argument('--max_norm', type=float, default=1.0)
 parser.add_argument('--outpath', type=str, default="outputs/")
 parser.add_argument('--seed', type=int, default=42)
@@ -38,26 +35,26 @@ parser.add_argument("data_inputs", nargs='+')
 
 args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
+
+# Device & Acceleration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
-    torch.backends.cudnn.benchmark = True # 加速固定輸入尺寸的運算
+    torch.backends.cudnn.benchmark = True 
 
-# 設定隨機種子以確保實驗可重現
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # ---------------------------------------------------------
-# 2. 資料讀取 (Data Loading)
+# Data Loading
 # ---------------------------------------------------------
-with open(args.json_file) as f: config = json.load(f)
+with open(args.json_file) as f: dataset_config = json.load(f)
 
 train_sets, val_sets = [], []
 for n in args.data_inputs:
-    ref = reference_genomes[config[n]["reference"]]
-    train_sets.append(TripletHiCDataset([HiCDatasetDec.load(p) for p in config[n]["training"]], reference=ref))
-    val_sets.append(TripletHiCDataset([HiCDatasetDec.load(p) for p in config[n]["validation"]], reference=ref))
+    ref = reference_genomes[dataset_config[n]["reference"]]
+    train_sets.append(TripletHiCDataset([HiCDatasetDec.load(p) for p in dataset_config[n]["training"]], reference=ref))
+    val_sets.append(TripletHiCDataset([HiCDatasetDec.load(p) for p in dataset_config[n]["validation"]], reference=ref))
 
-# 使用 GroupedTripletHiCDataset 整合多個來源
 train_loader = DataLoader(GroupedTripletHiCDataset(train_sets), batch_size=args.batch_size, 
                           sampler=RandomSampler(GroupedTripletHiCDataset(train_sets)), 
                           num_workers=4, pin_memory=True)
@@ -67,177 +64,132 @@ val_loader = DataLoader(GroupedTripletHiCDataset(val_sets), batch_size=100,
                         num_workers=4, pin_memory=True)
 
 # ---------------------------------------------------------
-# 3. 模型與優化器 (Model & Optimizer)
+# Model & Optimizer
 # ---------------------------------------------------------
-# 解析 mask 參數
 mask_bool = args.mask.lower() == 'true'
 model = eval("models." + args.model_name)(mask=mask_bool).to(device)
+if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-if torch.cuda.device_count() > 1: 
-    model = nn.DataParallel(model)
-
-# 根據需求選擇優化器
-if args.optimizer == 'adamw':
-    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-else:
+if args.optimizer == 'adagrad':
     optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
     scheduler = None
+else:
+    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    # LR Scheduler 參數寫死在內部，避免指令參數混淆
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
 # ---------------------------------------------------------
-# 4. 訓練流程 (Training Loop)
+# Training Loop
 # ---------------------------------------------------------
-base_path = os.path.join(args.outpath, f"{args.model_name}_{args.optimizer}_HardMining")
+file_info = f"{args.model_name}_{args.optimizer}_HardMining_{args.learning_rate}_{args.margin}"
+base_path = os.path.join(args.outpath, file_info)
+
 best_val_loss = float('inf')
 patience_cnt = 0
-history = {'loss': [], 'val_loss': [], 'intersect': [], 'hard_ratio': []}
-best_dist = {'ap': [], 'an': []}
+train_losses, val_losses = [], []
 
 print(f"Start Training: {base_path}")
-print(f"Configs: Margin={args.margin}, LR={args.learning_rate}, Batch={args.batch_size}")
-
-start_time = time.time()
+print(f"Config: Hard Mining (Margin={args.margin}), Unpack-Safe, Fast-Mode")
 
 try:
     for epoch in range(args.epoch_training):
-        # ------------------ Training Phase ------------------
+        epoch_start = time.time()
         model.train()
-        run_loss, run_hard_ratio = 0.0, 0.0
+        running_loss = 0.0
         
-        # 用於收集 "Train + Val" 的所有距離數據
-        all_ap, all_an = [], []
-
-        for i, batch in enumerate(train_loader):
-            # [安全拆解] 確保只取前三個 Tensor，避免 ValueError
-            a, p, n = batch[0].to(device), batch[1].to(device), batch[2].to(device)
+        # [安全修正] 使用 enumerate 並且不直接 unpack
+        for i, batch_data in enumerate(train_loader):
+            # [安全修正] 強制只取前三個 Tensor，忽略可能的 index/label
+            a = batch_data[0].to(device)
+            p = batch_data[1].to(device)
+            n = batch_data[2].to(device)
             
             optimizer.zero_grad()
             a_out, p_out, n_out = model(a, p, n)
             
-            # --- Inline Hard Mining Logic ---
+            # -------------------------------------------------
+            # Hard Mining Logic
+            # -------------------------------------------------
             d_ap = F.pairwise_distance(a_out, p_out)
             d_an = F.pairwise_distance(a_out, n_out)
             
-            # 計算 Loss: 只取大於 0 的部分 (Violated Margin)
+            # 1. 計算原始 Loss
             loss_val = F.relu(d_ap - d_an + args.margin)
+            
+            # 2. 建立遮罩：只選取 Loss > 0 (困難樣本)
+            # 1e-16 是為了浮點數誤差保護
             mask = loss_val > 1e-16
             
-            # 如果有困難樣本，只對困難樣本取平均；否則對全體取平均(通常為0)
-            loss = loss_val[mask].mean() if mask.any() else loss_val.mean()
-            
+            # 3. 聚合 Loss
+            if mask.any():
+                loss = loss_val[mask].mean() # 只對難題取平均
+            else:
+                loss = loss_val.mean() # 0.0 (全部分對了)
+            # -------------------------------------------------
+
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
             optimizer.step()
             
-            # 記錄數據
-            run_loss += loss.item()
-            run_hard_ratio += mask.float().mean().item()
-            
-            # 收集訓練集距離 (轉回 CPU 存入 list)
-            all_ap.extend(d_ap.detach().cpu().numpy())
-            all_an.extend(d_an.detach().cpu().numpy())
+            running_loss += loss.item()
 
-        # ------------------ Validation Phase ------------------
+            # 每 100 個 Batch 顯示一次，確保您知道程式在跑
+            if (i + 1) % 100 == 0:
+                print(f"Epoch [{epoch+1}/{args.epoch_training}] Step [{i+1}/{len(train_loader)}] "
+                      f"Loss: {running_loss/(i+1):.4f}")
+
+        # Validation
         model.eval()
         val_loss_sum = 0.0
         with torch.no_grad():
-            for batch in val_loader:
-                a, p, n = batch[0].to(device), batch[1].to(device), batch[2].to(device)
-                a_out, p_out, n_out = model(a, p, n)
+            for batch_data in val_loader:
+                # [安全修正] 驗證集也要安全 unpack
+                a = batch_data[0].to(device)
+                p = batch_data[1].to(device)
+                n = batch_data[2].to(device)
                 
-                # Validation 使用標準平均 Loss 評估
-                d_ap_v = F.pairwise_distance(a_out, p_out)
-                d_an_v = F.pairwise_distance(a_out, n_out)
+                ao, po, no = model(a, p, n)
+                
+                # 驗證集使用標準平均 Loss
+                d_ap_v = F.pairwise_distance(ao, po)
+                d_an_v = F.pairwise_distance(ao, no)
                 val_loss_sum += F.relu(d_ap_v - d_an_v + args.margin).mean().item()
-                
-                # 收集驗證集距離 (加入同一個 list)
-                all_ap.extend(d_ap_v.cpu().numpy())
-                all_an.extend(d_an_v.cpu().numpy())
-
-        # ------------------ Metrics Calculation ------------------
-        avg_loss = run_loss / len(train_loader)
+        
+        avg_train_loss = running_loss / len(train_loader)
         avg_val_loss = val_loss_sum / len(val_loader)
-        avg_hard = (run_hard_ratio / len(train_loader)) * 100
         
-        # [修正後的核心邏輯] 計算 PDF Intersection
-        # 1. 轉換為 Numpy Array
-        np_ap = np.array(all_ap)
-        np_an = np.array(all_an)
-        
-        # 2. 決定共同的 Range (涵蓋正負樣本的全域範圍)
-        # 這是避免直方圖截斷的關鍵
-        global_min = min(np_ap.min(), np_an.min())
-        global_max = max(np_ap.max(), np_an.max())
-        
-        # 3. 在相同 Range 下計算直方圖 (密度函數)
-        hist_p, edges = np.histogram(np_ap, bins=100, range=(global_min, global_max), density=True)
-        hist_n, _ = np.histogram(np_an, bins=100, range=(global_min, global_max), density=True)
-        
-        # 4. 計算交集面積: sum(min(P, N)) * bin_width
-        bin_width = edges[1] - edges[0]
-        intersect = np.sum(np.minimum(hist_p, hist_n)) * bin_width
-
-        # ------------------ Logging & Checkpoint ------------------
-        # 更新 LR
+        # LR Update
         curr_lr = optimizer.param_groups[0]['lr']
-        if scheduler: 
-            scheduler.step(avg_val_loss)
+        if scheduler: scheduler.step(avg_val_loss)
 
-        print(f"Epoch [{epoch+1}/{args.epoch_training}] "
-              f"Loss: {avg_loss:.4f} | Val: {avg_val_loss:.4f} | "
-              f"Hard%: {avg_hard:.1f}% | Intersect: {intersect:.4f} | LR: {curr_lr:.2e}")
+        print(f"Epoch [{epoch+1}] Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | "
+              f"LR: {curr_lr:.2e} | Time: {time.time()-epoch_start:.1f}s")
+        
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
 
-        history['loss'].append(avg_loss)
-        history['val_loss'].append(avg_val_loss)
-        history['intersect'].append(intersect)
-        history['hard_ratio'].append(avg_hard)
-
-        # 儲存策略：以 Val Loss 為準 (確保模型泛化能力)
+        # Checkpoint
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             patience_cnt = 0
             torch.save(model.state_dict(), base_path + '_best.ckpt')
-            best_dist['ap'], best_dist['an'] = list(np_ap), list(np_an)
         else:
             if epoch >= args.epoch_enforced_training:
                 patience_cnt += 1
                 if patience_cnt >= args.patience:
-                    print(f"Early Stopping Triggered at Epoch {epoch+1}")
+                    print(f"Early Stopping at Epoch {epoch+1}")
                     break
 
 except KeyboardInterrupt:
-    print("\nTraining interrupted by user.")
+    print("\nInterrupted.")
 
-# ---------------------------------------------------------
-# 5. 結果視覺化 (Visualization)
-# ---------------------------------------------------------
-print("Saving visualization...")
-fig, ax = plt.subplots(2, 2, figsize=(14, 10))
-
-# Loss Curve
-ax[0, 0].plot(history['loss'], label='Train (Hard)')
-ax[0, 0].plot(history['val_loss'], label='Val (Avg)')
-ax[0, 0].set_title('Loss Evolution')
-ax[0, 0].legend()
-
-# Intersection Score (Train+Val)
-ax[0, 1].plot(history['intersect'], color='purple')
-ax[0, 1].set_title('PDF Intersection Area (Train+Val)')
-ax[0, 1].set_ylabel('Area (lower is better)')
-
-# Hard Ratio
-ax[1, 0].plot(history['hard_ratio'], color='orange')
-ax[1, 0].set_title('Hard Sample Ratio (%)')
-
-# Distance Distribution (Best Model)
-if len(best_dist['ap']) > 0:
-    ax[1, 1].hist(best_dist['ap'], bins=100, alpha=0.6, label='Pos', density=True, color='g')
-    ax[1, 1].hist(best_dist['an'], bins=100, alpha=0.6, label='Neg', density=True, color='r')
-    ax[1, 1].axvline(args.margin, color='k', linestyle='--', label=f'Margin {args.margin}')
-    ax[1, 1].set_title(f'Dist Distribution (Best)\nIntersect: {min(history["intersect"]):.4f}')
-    ax[1, 1].legend()
-
-plt.tight_layout()
-plt.savefig(base_path + '_result.pdf')
-print(f"Done. Results saved to {base_path}_result.pdf")
-print(f"Total time: {(time.time() - start_time)/60:.1f} mins")
+# Visualization
+finally:
+    if train_losses:
+        plt.figure(figsize=(10, 5))
+        plt.plot(train_losses, label='Train')
+        plt.plot(val_losses, label='Val')
+        plt.title(f"Loss Curve (Margin {args.margin})")
+        plt.legend()
+        plt.savefig(base_path + '_loss.pdf')
+        print("Done.")
