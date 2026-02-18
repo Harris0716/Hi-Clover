@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, time
 import matplotlib.pyplot as plt
 
-# 引入專案模組
+# Project modules           
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
 import HiSiNet.models as models
 from HiSiNet.reference_dictionaries import reference_genomes
@@ -75,7 +75,7 @@ if args.optimizer == 'adagrad':
     scheduler = None
 else:
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    # LR Scheduler 參數寫死在內部，避免指令參數混淆
+    # LR scheduler kept internal to avoid over-complicating CLI arguments
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
 # ---------------------------------------------------------
@@ -101,9 +101,9 @@ try:
         running_loss = 0.0
         e_norms = []
 
-        # [安全修正] 使用 enumerate 並且不直接 unpack
+        # [Safety] Use enumerate and avoid direct unpacking
         for i, batch_data in enumerate(train_loader):
-            # [安全修正] 強制只取前三個 Tensor，忽略可能的 index/label
+            # [Safety] Explicitly take only the first three tensors, ignore any extra index/label
             a = batch_data[0].to(device)
             p = batch_data[1].to(device)
             n = batch_data[2].to(device)
@@ -117,18 +117,18 @@ try:
             d_ap = F.pairwise_distance(a_out, p_out)
             d_an = F.pairwise_distance(a_out, n_out)
             
-            # 1. 計算原始 Loss
+            # 1. Compute raw loss
             loss_val = F.relu(d_ap - d_an + args.margin)
             
-            # 2. 建立遮罩：只選取 Loss > 0 (困難樣本)
-            # 1e-16 是為了浮點數誤差保護
+            # 2. Build a mask: only keep samples with loss > 0 (hard examples)
+            # 1e-16 is for numerical stability
             mask = loss_val > 1e-16
             
-            # 3. 聚合 Loss
+            # 3. Aggregate loss
             if mask.any():
-                loss = loss_val[mask].mean() # 只對難題取平均
+                loss = loss_val[mask].mean()  # average over hard examples only
             else:
-                loss = loss_val.mean() # 0.0 (全部分對了)
+                loss = loss_val.mean()        # 0.0 when all triplets satisfy the margin
             # -------------------------------------------------
 
             loss.backward()
@@ -138,7 +138,7 @@ try:
             
             running_loss += loss.item()
 
-            # 每 100 個 Batch 顯示一次，確保您知道程式在跑
+            # Print every 100 batches so you know training is progressing
             if (i + 1) % 100 == 0:
                 print(f"Epoch [{epoch+1}/{args.epoch_training}] Step [{i+1}/{len(train_loader)}] "
                       f"Loss: {running_loss/(i+1):.4f}")
@@ -149,14 +149,14 @@ try:
         c_ap, c_an = [], []
         with torch.no_grad():
             for batch_data in val_loader:
-                # [安全修正] 驗證集也要安全 unpack
+                # [Safety] Validation loader also uses safe unpacking
                 a = batch_data[0].to(device)
                 p = batch_data[1].to(device)
                 n = batch_data[2].to(device)
                 
                 ao, po, no = model(a, p, n)
                 
-                # 驗證集使用標準平均 Loss
+                # Validation uses standard mean loss over the batch
                 d_ap_v = F.pairwise_distance(ao, po)
                 d_an_v = F.pairwise_distance(ao, no)
                 val_loss_sum += F.relu(d_ap_v - d_an_v + args.margin).mean().item()
@@ -198,7 +198,7 @@ except KeyboardInterrupt:
     print("\nInterrupted.")
 
 # ---------------------------------------------------------
-# Visualization (含 early stop / Ctrl+C 後仍會執行)
+# Visualization (runs even after early stop or Ctrl+C)
 # ---------------------------------------------------------
 finally:
     def save_fig(fig, suffix):
@@ -207,7 +207,7 @@ finally:
         plt.close(fig)
 
     if train_losses:
-        # Figure 1: 四格監測圖 (Loss、Log-Ratio、Gradient Norm、Learning Rate)
+        # Figure 1: four-panel monitoring plot (Loss, Log-Ratio, Gradient Norm, Learning Rate)
         fig1, ax = plt.subplots(2, 2, figsize=(14, 10))
         ax[0, 0].plot(train_losses, label='Train')
         ax[0, 0].plot(val_losses, label='Val')
@@ -233,7 +233,7 @@ finally:
         save_fig(fig1, '_training_stats.pdf')
         print(f"Saved: {base_path}_training_stats.pdf")
 
-        # 保留原本單一 Loss 圖（可選）
+        # Optional: keep a standalone loss curve figure
         fig_loss = plt.figure(figsize=(10, 5))
         plt.plot(train_losses, label='Train')
         plt.plot(val_losses, label='Val')
