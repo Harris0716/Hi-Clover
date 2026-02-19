@@ -118,7 +118,7 @@ try:
 
             if use_amp:
                 # Mixed precision forward + loss
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast(device_type="cuda"):
                     a_out, p_out, n_out = model(a, p, n)
 
                     # -------------------------------------------------
