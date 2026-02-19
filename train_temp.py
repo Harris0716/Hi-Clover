@@ -31,6 +31,8 @@ parser.add_argument('--max_norm', type=float, default=1.0)
 parser.add_argument('--outpath', type=str, default="outputs/")
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--mask', type=str, default="true")
+parser.add_argument('--amp', action='store_true',
+                    help='Use mixed precision training (CUDA only)')
 parser.add_argument("data_inputs", nargs='+')
 
 args = parser.parse_args()
@@ -78,6 +80,10 @@ else:
     # LR scheduler kept internal to avoid over-complicating CLI arguments
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
+# AMP support (CUDA only)
+use_amp = args.amp and device.type == "cuda"
+scaler = torch.cuda.amp.GradScaler() if use_amp else None
+
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
@@ -104,37 +110,70 @@ try:
         # [Safety] Use enumerate and avoid direct unpacking
         for i, batch_data in enumerate(train_loader):
             # [Safety] Explicitly take only the first three tensors, ignore any extra index/label
-            a = batch_data[0].to(device)
-            p = batch_data[1].to(device)
-            n = batch_data[2].to(device)
+            a = batch_data[0].to(device, non_blocking=True)
+            p = batch_data[1].to(device, non_blocking=True)
+            n = batch_data[2].to(device, non_blocking=True)
             
             optimizer.zero_grad()
-            a_out, p_out, n_out = model(a, p, n)
-            
-            # -------------------------------------------------
-            # Hard Mining Logic
-            # -------------------------------------------------
-            d_ap = F.pairwise_distance(a_out, p_out)
-            d_an = F.pairwise_distance(a_out, n_out)
-            
-            # 1. Compute raw loss
-            loss_val = F.relu(d_ap - d_an + args.margin)
-            
-            # 2. Build a mask: only keep samples with loss > 0 (hard examples)
-            # 1e-16 is for numerical stability
-            mask = loss_val > 1e-16
-            
-            # 3. Aggregate loss
-            if mask.any():
-                loss = loss_val[mask].mean()  # average over hard examples only
-            else:
-                loss = loss_val.mean()        # 0.0 when all triplets satisfy the margin
-            # -------------------------------------------------
 
-            loss.backward()
-            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
-            e_norms.append(grad_norm.item())
-            optimizer.step()
+            if use_amp:
+                # Mixed precision forward + loss
+                with torch.cuda.amp.autocast():
+                    a_out, p_out, n_out = model(a, p, n)
+
+                    # -------------------------------------------------
+                    # Hard Mining Logic
+                    # -------------------------------------------------
+                    d_ap = F.pairwise_distance(a_out, p_out)
+                    d_an = F.pairwise_distance(a_out, n_out)
+                    
+                    # 1. Compute raw loss
+                    loss_val = F.relu(d_ap - d_an + args.margin)
+                    
+                    # 2. Build a mask: only keep samples with loss > 0 (hard examples)
+                    # 1e-16 is for numerical stability
+                    mask = loss_val > 1e-16
+                    
+                    # 3. Aggregate loss
+                    if mask.any():
+                        loss = loss_val[mask].mean()  # average over hard examples only
+                    else:
+                        loss = loss_val.mean()        # 0.0 when all triplets satisfy the margin
+                    # -------------------------------------------------
+
+                scaler.scale(loss).backward()
+                grad_norm = nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
+                e_norms.append(grad_norm.item())
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                # Standard FP32 forward + loss
+                a_out, p_out, n_out = model(a, p, n)
+
+                # -------------------------------------------------
+                # Hard Mining Logic
+                # -------------------------------------------------
+                d_ap = F.pairwise_distance(a_out, p_out)
+                d_an = F.pairwise_distance(a_out, n_out)
+                
+                # 1. Compute raw loss
+                loss_val = F.relu(d_ap - d_an + args.margin)
+                
+                # 2. Build a mask: only keep samples with loss > 0 (hard examples)
+                # 1e-16 is for numerical stability
+                mask = loss_val > 1e-16
+                
+                # 3. Aggregate loss
+                if mask.any():
+                    loss = loss_val[mask].mean()  # average over hard examples only
+                else:
+                    loss = loss_val.mean()        # 0.0 when all triplets satisfy the margin
+                # -------------------------------------------------
+
+                loss.backward()
+                grad_norm = nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
+                e_norms.append(grad_norm.item())
+                optimizer.step()
             
             running_loss += loss.item()
 
@@ -150,9 +189,9 @@ try:
         with torch.no_grad():
             for batch_data in val_loader:
                 # [Safety] Validation loader also uses safe unpacking
-                a = batch_data[0].to(device)
-                p = batch_data[1].to(device)
-                n = batch_data[2].to(device)
+                a = batch_data[0].to(device, non_blocking=True)
+                p = batch_data[1].to(device, non_blocking=True)
+                n = batch_data[2].to(device, non_blocking=True)
                 
                 ao, po, no = model(a, p, n)
                 
