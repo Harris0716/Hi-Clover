@@ -82,7 +82,7 @@ else:
 
 # AMP support (CUDA only)
 use_amp = args.amp and device.type == "cuda"
-scaler = torch.cuda.amp.GradScaler() if use_amp else None
+scaler = torch.amp.GradScaler("cuda") if use_amp else None
 
 # ---------------------------------------------------------
 # Training Loop
@@ -118,7 +118,7 @@ try:
 
             if use_amp:
                 # Mixed precision forward + loss
-                with torch.amp.autocast(device_type="cuda"):
+                with torch.amp.autocast("cuda"):
                     a_out, p_out, n_out = model(a, p, n)
 
                     # -------------------------------------------------
