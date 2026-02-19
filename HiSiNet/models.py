@@ -84,6 +84,64 @@ class TripletLeNet(TripletNet):
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
+
+class TripletLeNetV2(TripletNet):
+    """
+    A slightly deeper and wider variant of TripletLeNet:
+    - Adds a third conv block (64 -> 128) to increase receptive field and capacity.
+    - Keeps embedding dimension at 128 for compatibility with existing code.
+    """
+
+    def __init__(self, mask=False):
+        super(TripletLeNetV2, self).__init__(mask=mask)
+
+        self.features = nn.Sequential(
+            # Block 1: 1 -> 32
+            nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=0),
+            nn.BatchNorm2d(32),
+            nn.GELU(),
+            nn.MaxPool2d(2, stride=2),
+
+            # Block 2: 32 -> 64
+            nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=0),
+            nn.BatchNorm2d(64),
+            nn.GELU(),
+            nn.MaxPool2d(2, stride=2),
+
+            # Block 3: 64 -> 128
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.GELU(),
+            nn.MaxPool2d(2, stride=2),
+
+            # Global average pooling to get a fixed-size 128-D feature vector per sample
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+
+        self.linear = nn.Sequential(
+            nn.Linear(128, 256),
+            nn.BatchNorm1d(256),
+            nn.GELU(),
+            nn.Dropout(p=0.4),
+            nn.Linear(256, 128),
+        )
+
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward_one(self, x):
+        x = self.mask_data(x)
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        return F.normalize(x, p=2, dim=1)
+
 # resnet
 class TripletResNet(nn.Module):
     def __init__(self, mask=False, embedding_dim=128, backbone="resnet18"):
