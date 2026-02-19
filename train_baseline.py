@@ -31,7 +31,7 @@ parser.add_argument('--epoch_training', type=int, default=100, help='Max epochs'
 parser.add_argument('--epoch_enforced_training', type=int, default=20, help='Enforced epochs')
 parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
 parser.add_argument('--seed', type=int, default=30004, help='Random seed')
-parser.add_argument('--mask', type=bool, default=False, help='Mask diagonal')
+parser.add_argument('--mask', type=bool, default=True, help='Mask diagonal')
 parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping (stop training)')
 parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
 parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clipping max norm')
