@@ -33,6 +33,7 @@ parser.add_argument('--patience', type=int, default=10, help='Patience for early
 parser.add_argument('--margin', type=float, default=0.5, help='Margin for triplet loss')
 parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clipping max norm')
 parser.add_argument('--adagrad_weight_decay', type=float, default=0.0, help='L2 weight decay for Adagrad')
+parser.add_argument('--hard_mining', action='store_true', help='Only backprop on triplets that violate margin (hard examples)')
 parser.add_argument('--run_eval', action='store_true', help='Run test.py evaluation after training (intersect, rep_rate, cond_rate)')
 parser.add_argument('--threshold_data', type=str, default='train_val', choices=['val', 'train_val'],
                     help='Data for threshold (intersect) calibration: train_val=train+val (default); val=validation only. Used when --run_eval.')
@@ -52,7 +53,8 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # parameters
 # ---------------------------------------------------------
-file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+_hard = "_hard" if args.hard_mining else ""
+file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}{_hard}"
 base_save_path = os.path.join(args.outpath, file_param_info)
 
 # ---------------------------------------------------------
@@ -101,7 +103,7 @@ train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [],
 best_ap_dist, best_an_dist = [], []
 
 print(f"Starting training: {file_param_info}")
-print(f"Config: Adagrad + Jitter + Gradient Clipping (max_norm={args.max_norm})")
+print(f"Config: Adagrad + Jitter + Gradient Clipping (max_norm={args.max_norm})" + (" | Hard Mining" if args.hard_mining else ""))
 
 total_start_time = time.time()
 
@@ -123,7 +125,16 @@ try:
 
             optimizer.zero_grad()
             a_out, p_out, n_out = model(a, p, n)
-            loss = criterion(a_out, p_out, n_out)
+
+            if args.hard_mining:
+                d_ap = F.pairwise_distance(a_out, p_out)
+                d_an = F.pairwise_distance(a_out, n_out)
+                loss_val = F.relu(d_ap - d_an + args.margin)
+                mask = loss_val > 1e-16
+                loss = loss_val[mask].mean() if mask.any() else loss_val.mean()
+            else:
+                loss = criterion(a_out, p_out, n_out)
+
             loss.backward()
             
             grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
@@ -205,7 +216,7 @@ finally:
     print(f"Training Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
 
     # Optional: run test.py for intersect & performance metrics
-    if getattr(args, 'run_eval', False):
+    if args.run_eval:
         ckpt_path = os.path.abspath(base_save_path + '_best.ckpt')
         if os.path.exists(ckpt_path):
             script_dir = os.path.dirname(os.path.abspath(__file__))
