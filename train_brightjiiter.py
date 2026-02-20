@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-import argparse, json, os, time
+import argparse, json, os, subprocess, sys, time
 import matplotlib.pyplot as plt
 
 from HiSiNet.HiCDatasetClass import HiCDatasetDec, TripletHiCDataset, GroupedTripletHiCDataset
@@ -33,6 +33,9 @@ parser.add_argument('--patience', type=int, default=10, help='Patience for early
 parser.add_argument('--margin', type=float, default=0.5, help='Margin for triplet loss')
 parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clipping max norm')
 parser.add_argument('--adagrad_weight_decay', type=float, default=0.0, help='L2 weight decay for Adagrad')
+parser.add_argument('--run_eval', action='store_true', help='Run test.py evaluation after training (intersect, rep_rate, cond_rate)')
+parser.add_argument('--threshold_data', type=str, default='train_val', choices=['val', 'train_val'],
+                    help='Data for threshold (intersect) calibration: train_val=train+val (default); val=validation only. Used when --run_eval.')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -200,3 +203,17 @@ finally:
         print(f"Saved: {base_save_path}_val_dist_hist.pdf")
 
     print(f"Training Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
+
+    # Optional: run test.py for intersect & performance metrics
+    if getattr(args, 'run_eval', False):
+        ckpt_path = os.path.abspath(base_save_path + '_best.ckpt')
+        if os.path.exists(ckpt_path):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            test_script = os.path.join(script_dir, 'test.py')
+            cmd = [sys.executable, test_script, args.model_name, args.json_file, ckpt_path]
+            cmd.extend(args.data_inputs)
+            cmd.extend(['--threshold_data', args.threshold_data])
+            print(f"\n--- Running evaluation (threshold_data={args.threshold_data}) ---")
+            subprocess.run(cmd, cwd=script_dir)
+        else:
+            print(f"Skipping --run_eval: checkpoint not found ({ckpt_path})")
