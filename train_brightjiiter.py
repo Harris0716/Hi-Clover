@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, subprocess, sys, time
@@ -37,6 +38,10 @@ parser.add_argument('--hard_mining', action='store_true', help='Only backprop on
 parser.add_argument('--run_eval', action='store_true', help='Run test.py evaluation after training (intersect, rep_rate, cond_rate)')
 parser.add_argument('--threshold_data', type=str, default='train_val', choices=['val', 'train_val'],
                     help='Data for threshold (intersect) calibration: train_val=train+val (default); val=validation only. Used when --run_eval.')
+parser.add_argument('--no_scheduler', action='store_true', help='Disable ReduceLROnPlateau (use fixed LR)')
+parser.add_argument('--lr_patience', type=int, default=3, help='Epochs without val improvement before reducing LR')
+parser.add_argument('--lr_factor', type=float, default=0.5, help='LR multiplier when reducing')
+parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum LR for scheduler')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -88,6 +93,7 @@ criterion = TripletLoss(margin=args.margin)
 
 # 使用 Adagrad (適合稀疏特徵)
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate, weight_decay=args.adagrad_weight_decay)
+scheduler = None if args.no_scheduler else ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
 
 # ---------------------------------------------------------
 # Data Augmentation (Brightness Jitter)
@@ -99,11 +105,11 @@ jitter_transform = T.ColorJitter(brightness=0.2, contrast=0.2)
 # ---------------------------------------------------------
 best_val_loss = float('inf')
 patience_counter = 0 
-train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
+train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history = [], [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
 print(f"Starting training: {file_param_info}")
-print(f"Config: Adagrad + Jitter + Gradient Clipping (max_norm={args.max_norm})" + (" | Hard Mining" if args.hard_mining else ""))
+print(f"Config: Adagrad + Jitter + Gradient Clipping (max_norm={args.max_norm})" + (" | Hard Mining" if args.hard_mining else "") + ("" if args.no_scheduler else " | ReduceLROnPlateau"))
 
 total_start_time = time.time()
 
@@ -169,8 +175,14 @@ try:
         val_losses.append(avg_v)
         val_log_ratio_history.append(l_ratio)
         grad_norm_history.append(np.mean(e_norms))
+        current_lr = optimizer.param_groups[0]['lr']
+        lr_history.append(current_lr)
 
-        print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
+        if scheduler is not None:
+            scheduler.step(avg_v)
+
+        lr_str = f", LR: {current_lr:.2e}" if scheduler else ""
+        print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}{lr_str}, Time: {time.time()-epoch_start:.2f}s")
 
         if avg_v < best_val_loss:
             best_val_loss = avg_v
@@ -197,11 +209,11 @@ finally:
         plt.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(base_save_path + suffix, dpi=300); plt.close(fig)
 
     if train_losses:
-        fig1, ax = plt.subplots(1, 3, figsize=(18, 6))
-        ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
-        ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log(a_n/a_p))'); ax[1].axhline(0, color='k', ls='--')
-        ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(args.max_norm, color='r', ls='--', label='Clip Threshold')
-        ax[2].legend()
+        fig1, ax = plt.subplots(2, 2, figsize=(14, 10))
+        ax[0, 0].plot(train_losses, label='Train'); ax[0, 0].plot(val_losses, label='Val'); ax[0, 0].set_title('Loss Evolution'); ax[0, 0].legend()
+        ax[0, 1].plot(val_log_ratio_history, color='blue'); ax[0, 1].set_title('Log-Ratio (log(a_n/a_p))'); ax[0, 1].axhline(0, color='k', ls='--')
+        ax[1, 0].plot(grad_norm_history, color='teal'); ax[1, 0].set_title('Gradient Norm'); ax[1, 0].axhline(args.max_norm, color='r', ls='--', label='Clip Threshold'); ax[1, 0].legend()
+        ax[1, 1].semilogy(lr_history, color='green'); ax[1, 1].set_title('Learning Rate'); ax[1, 1].set_xlabel('Epoch')
         fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin} | Jitter+Clip"); save_fig(fig1, '_training_stats.pdf')
         print(f"Saved: {base_save_path}_training_stats.pdf")
 
