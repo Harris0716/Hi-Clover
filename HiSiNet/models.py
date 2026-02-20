@@ -85,6 +85,55 @@ class TripletLeNet(TripletNet):
         return F.normalize(x, p=2, dim=1)
 
 
+class TripletLeNetLayerNorm(TripletNet):
+    """
+    TripletLeNet with LayerNorm / GroupNorm instead of BatchNorm.
+    - Conv layers: GroupNorm(1, C) — per-sample, no batch dependency.
+    - Linear layer: LayerNorm(D).
+    Useful when BN causes overfitting or batch-dependent embeddings.
+    """
+    def __init__(self, mask=False):
+        super(TripletLeNetLayerNorm, self).__init__(mask=mask)
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=5, stride=1),
+            nn.GroupNorm(1, 32),  # equiv to LayerNorm over channels per spatial loc
+            nn.GELU(),
+            nn.MaxPool2d(2, stride=2),
+
+            nn.Conv2d(32, 64, kernel_size=5, stride=1),
+            nn.GroupNorm(1, 64),
+            nn.GELU(),
+            nn.MaxPool2d(2, stride=2),
+
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+
+        self.linear = nn.Sequential(
+            nn.Linear(64, 256),
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Dropout(p=0.4),
+            nn.Linear(256, 128),
+        )
+
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward_one(self, x):
+        x = self.mask_data(x)
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        return F.normalize(x, p=2, dim=1)
+
+
 class TripletLeNetV2(TripletNet):
     """
     A slightly deeper and wider variant of TripletLeNet:
