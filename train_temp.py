@@ -142,6 +142,7 @@ try:
                     # -------------------------------------------------
 
                 scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)  # Must unscale before clipping (clipping scaled grads kills updates)
                 grad_norm = nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
                 e_norms.append(grad_norm.item())
                 scaler.step(optimizer)
