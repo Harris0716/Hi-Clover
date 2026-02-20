@@ -24,9 +24,9 @@ parser.add_argument('model_name', type=str)
 parser.add_argument('json_file', type=str)
 parser.add_argument('model_infile', type=str)
 parser.add_argument('--mask', type=bool, default=True)
-# threshold_data: "val" = use validation only (current); "train_val" = use train+val for more stable intersect
-parser.add_argument('--threshold_data', type=str, default='val', choices=['val', 'train_val'],
-                    help='Data used to calibrate decision threshold (intersect). val=validation only; train_val=train+val for stabler PDF.')    
+# threshold_data: "train_val" = use train+val for threshold (default, stabler); "val" = validation only
+parser.add_argument('--threshold_data', type=str, default='train_val', choices=['val', 'train_val'],
+                    help='Data used to calibrate decision threshold (intersect). train_val=train+val (default, stabler); val=validation only.')    
 parser.add_argument("data_inputs", nargs='+')
 args = parser.parse_args()
 
@@ -196,9 +196,21 @@ for subset in ["train_val", "test"]:
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_umap.pdf"), bbox_inches='tight'); plt.close()
 
 # ---------------------------------------------------------
-# Output Summary 
+# Output Summary (CSV organized for readability)
 # ---------------------------------------------------------
 summary_df = pd.DataFrame(results)
+
+# Reorder columns: subset, threshold source, threshold value, then metrics
+col_order = ["set", "threshold_data", "intersect", "rep_rate", "cond_rate", "mean_performance", "sep_index", "silhouette"]
+summary_df = summary_df[[c for c in col_order if c in summary_df.columns]]
+
+# Format for readability: round floats
+summary_df_display = summary_df.copy()
+for col in ["rep_rate", "cond_rate", "mean_performance", "sep_index", "silhouette", "intersect"]:
+    if col in summary_df_display.columns:
+        summary_df_display[col] = summary_df_display[col].round(4)
+
 out_csv = os.path.join(m_dir, f"{m_base}_performance_summary_threshold_{args.threshold_data}.csv")
-summary_df.to_csv(out_csv, index=False, float_format='%.4f')
-print(f"Evaluation Complete. CSV saved: {out_csv}")
+summary_df_display.to_csv(out_csv, index=False)
+print(f"\nEvaluation Complete. CSV saved: {out_csv}")
+print(f"  Threshold calibrated from: {threshold_source} (intersect = {fixed_threshold:.4f})")
