@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import argparse, json, os, subprocess, sys, time
@@ -38,10 +38,11 @@ parser.add_argument('--hard_mining', action='store_true', help='Only backprop on
 parser.add_argument('--run_eval', action='store_true', help='Run test.py evaluation after training (intersect, rep_rate, cond_rate)')
 parser.add_argument('--threshold_data', type=str, default='train_val', choices=['val', 'train_val'],
                     help='Data for threshold (intersect) calibration: train_val=train+val (default); val=validation only. Used when --run_eval.')
-parser.add_argument('--no_scheduler', action='store_true', help='Disable ReduceLROnPlateau (use fixed LR)')
-parser.add_argument('--lr_patience', type=int, default=3, help='Epochs without val improvement before reducing LR')
-parser.add_argument('--lr_factor', type=float, default=0.5, help='LR multiplier when reducing')
-parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum LR for scheduler')
+parser.add_argument('--scheduler', type=str, default='plateau', choices=['plateau', 'cosine', 'none'],
+                    help='LR scheduler: plateau=ReduceLROnPlateau (default), cosine=CosineAnnealingLR, none=fixed LR')
+parser.add_argument('--lr_patience', type=int, default=3, help='[plateau] Epochs without val improvement before reducing LR')
+parser.add_argument('--lr_factor', type=float, default=0.5, help='[plateau] LR multiplier when reducing')
+parser.add_argument('--min_lr', type=float, default=1e-6, help='[plateau/cosine] Minimum LR (eta_min for cosine)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -93,7 +94,12 @@ criterion = TripletLoss(margin=args.margin)
 
 # 使用 Adagrad (適合稀疏特徵)
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate, weight_decay=args.adagrad_weight_decay)
-scheduler = None if args.no_scheduler else ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
+if args.scheduler == 'plateau':
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
+elif args.scheduler == 'cosine':
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.epoch_training, eta_min=args.min_lr)
+else:
+    scheduler = None
 
 # ---------------------------------------------------------
 # Data Augmentation (Brightness Jitter)
@@ -109,7 +115,8 @@ train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history =
 best_ap_dist, best_an_dist = [], []
 
 print(f"Starting training: {file_param_info}")
-print(f"Config: Adagrad + Jitter + Gradient Clipping (max_norm={args.max_norm})" + (" | Hard Mining" if args.hard_mining else "") + ("" if args.no_scheduler else " | ReduceLROnPlateau"))
+sched_str = {"plateau": "ReduceLROnPlateau", "cosine": "CosineAnnealingLR"}.get(args.scheduler, "")
+print(f"Config: Adagrad + Jitter + Gradient Clipping (max_norm={args.max_norm})" + (" | Hard Mining" if args.hard_mining else "") + (f" | {sched_str}" if sched_str else ""))
 
 total_start_time = time.time()
 
@@ -179,7 +186,10 @@ try:
         lr_history.append(current_lr)
 
         if scheduler is not None:
-            scheduler.step(avg_v)
+            if args.scheduler == 'plateau':
+                scheduler.step(avg_v)
+            else:
+                scheduler.step()
 
         lr_str = f", LR: {current_lr:.2e}" if scheduler else ""
         print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}{lr_str}, Time: {time.time()-epoch_start:.2f}s")
