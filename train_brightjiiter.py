@@ -243,10 +243,12 @@ finally:
         if os.path.exists(ckpt_path):
             script_dir = os.path.dirname(os.path.abspath(__file__))
             test_script = os.path.join(script_dir, 'test.py')
-            cmd = [sys.executable, test_script, args.model_name, args.json_file, ckpt_path]
+            json_path = os.path.abspath(args.json_file)
+            config_dir = os.path.dirname(json_path) if os.path.dirname(json_path) else os.getcwd()
+            cmd = [sys.executable, test_script, args.model_name, json_path, ckpt_path]
             cmd.extend(args.data_inputs)
             cmd.extend(['--threshold_data', args.threshold_data])
             print(f"\n--- Running evaluation (threshold_data={args.threshold_data}) ---")
-            subprocess.run(cmd, cwd=script_dir)
+            subprocess.run(cmd, cwd=config_dir)
         else:
             print(f"Skipping --run_eval: checkpoint not found ({ckpt_path})")

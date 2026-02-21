@@ -63,7 +63,17 @@ model = eval("models." + args.model_name)(mask=args.mask).to(device)
 sd = torch.load(args.model_infile, map_location=device, weights_only=True)
 model.load_state_dict(OrderedDict([(k.replace("module.", ""), v) for k, v in sd.items()]))
 
-with open(args.json_file) as f: dataset_config = json.load(f)
+json_path = os.path.abspath(os.path.expanduser(args.json_file))
+if not os.path.exists(json_path):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for base in [os.path.dirname(script_dir), script_dir, os.getcwd()]:
+        candidate = os.path.normpath(os.path.join(base, args.json_file))
+        if os.path.exists(candidate):
+            json_path = os.path.abspath(candidate)
+            break
+if not os.path.exists(json_path):
+    raise FileNotFoundError(f"config not found: {args.json_file} (tried {json_path})")
+with open(json_path) as f: dataset_config = json.load(f)
 m_dir, m_base = os.path.dirname(args.model_infile), os.path.basename(args.model_infile).split('.ckpt')[0]
 
 cell_name = args.data_inputs[0]
