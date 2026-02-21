@@ -149,13 +149,16 @@ try:
         val_losses.append(avg_v)
         val_log_ratio_history.append(l_ratio)
         grad_norm_history.append(np.mean(e_norms))
-        current_lr = optimizer.param_groups[0]['lr']
-        lr_history.append(current_lr)
+        lr_before = optimizer.param_groups[0]['lr']
+        lr_history.append(lr_before)
 
         if scheduler is not None:
             scheduler.step(avg_v)
+            current_lr = optimizer.param_groups[0]['lr']
+            if current_lr < lr_before:
+                print(f"-> LR reduced {lr_before:.2e} -> {current_lr:.2e}")
 
-        lr_str = f", LR: {current_lr:.2e}" if scheduler else ""
+        lr_str = f", LR: {lr_before:.2e}" if scheduler else ""
         print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s{lr_str}")
 
         if avg_v < best_val_loss:
