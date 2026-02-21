@@ -39,6 +39,7 @@ parser.add_argument('--lr_patience', type=int, default=3, help='[plateau] Epochs
 parser.add_argument('--lr_factor', type=float, default=0.5, help='[plateau] LR multiplier when reducing')
 parser.add_argument('--min_lr', type=float, default=1e-6, help='[plateau] Minimum LR')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='L2 weight decay for Adagrad (e.g. 1e-4, 1e-3 to reduce overfitting)')
+parser.add_argument('--num_workers', type=int, default=4, help='DataLoader workers (use 0 to avoid shm error with large batch)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -75,8 +76,8 @@ print(f"num_train_triplets: {num_train_triplets:,}")
 print(f"num_val_triplets: {num_val_triplets:,}") 
 print(f"total_num_triplets: {num_train_triplets + num_val_triplets:,}")
 
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=RandomSampler(train_dataset), num_workers=4, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(val_dataset), num_workers=4, pin_memory=True)
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=RandomSampler(train_dataset), num_workers=args.num_workers, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(val_dataset), num_workers=args.num_workers, pin_memory=True)
 
 # ---------------------------------------------------------
 # Model & Optimizer
