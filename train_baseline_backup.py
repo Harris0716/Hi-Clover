@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import argparse, json, os, time
 import matplotlib.pyplot as plt
 
@@ -33,6 +34,11 @@ parser.add_argument('--mask', type=bool, default=False, help='Mask diagonal')
 parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
 parser.add_argument('--margin', type=float, default=1.0, help='Margin for triplet loss')
 parser.add_argument('--max_norm', type=float, default=1.0, help='Gradient clipping max norm')
+parser.add_argument('--scheduler', type=str, default='none', choices=['plateau', 'none'], help='LR scheduler: plateau=ReduceLROnPlateau, none=fixed LR (default)')
+parser.add_argument('--lr_patience', type=int, default=3, help='[plateau] Epochs without val improvement before reducing LR')
+parser.add_argument('--lr_factor', type=float, default=0.5, help='[plateau] LR multiplier when reducing')
+parser.add_argument('--min_lr', type=float, default=1e-6, help='[plateau] Minimum LR')
+parser.add_argument('--weight_decay', type=float, default=0.0, help='L2 weight decay for Adagrad (e.g. 1e-4, 1e-3 to reduce overfitting)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -79,19 +85,22 @@ model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
 criterion = TripletLoss(margin=args.margin)
-optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
+optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
-# [NOTE] No Scheduler used (Standard Adagrad behavior)
+scheduler = None
+if args.scheduler == 'plateau':
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
 
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
 best_val_loss = float('inf')  
 patience_counter = 0 
-train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
+train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history = [], [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
-print(f"Starting training: {file_param_info}")
+wd_str = f" | weight_decay={args.weight_decay}" if args.weight_decay > 0 else ""
+print(f"Starting training: {file_param_info}" + (f" | Scheduler: ReduceLROnPlateau(patience={args.lr_patience}, factor={args.lr_factor})" if scheduler else "") + wd_str)
 total_start_time = time.time()
 
 try:
@@ -139,9 +148,15 @@ try:
         train_losses.append(running_loss / len(train_loader))
         val_losses.append(avg_v)
         val_log_ratio_history.append(l_ratio)
-        grad_norm_history.append(np.mean(e_norms)) # Safe now (float list)
+        grad_norm_history.append(np.mean(e_norms))
+        current_lr = optimizer.param_groups[0]['lr']
+        lr_history.append(current_lr)
 
-        print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
+        if scheduler is not None:
+            scheduler.step(avg_v)
+
+        lr_str = f", LR: {current_lr:.2e}" if scheduler else ""
+        print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s{lr_str}")
 
         if avg_v < best_val_loss:
             best_val_loss = avg_v
@@ -166,11 +181,14 @@ def save_fig(fig, suffix):
     plt.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(base_save_path + suffix, dpi=300); plt.close(fig)
 
 # Figure 1: Training Stats
-fig1, ax = plt.subplots(1, 3, figsize=(18, 6))
+n_plots = 4 if lr_history and len(set(lr_history)) > 1 else 3
+fig1, ax = plt.subplots(1, n_plots, figsize=(6 * n_plots, 6))
 ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
 ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log(a_n/a_p))'); ax[1].axhline(0, color='k', ls='--')
 ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(args.max_norm, color='r', ls='--')
-fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}"); save_fig(fig1, '_training_stats.pdf')
+if n_plots == 4:
+    ax[3].plot(lr_history, color='orange'); ax[3].set_title('Learning Rate'); ax[3].set_yscale('log')
+fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}" + (" | ReduceLROnPlateau" if scheduler else "")); save_fig(fig1, '_training_stats.pdf')
 
 # Figure 2: Distance Distribution (skip if interrupted before first best model)
 if best_ap_dist and best_an_dist:

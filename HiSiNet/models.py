@@ -98,7 +98,7 @@ class TripletLeNetBatchNorm(TripletNet):
             nn.Linear(64, 256),
             nn.BatchNorm1d(256),
             nn.GELU(),
-            nn.Dropout(p=0.4),
+            nn.Dropout(p=0.5),
             nn.Linear(256, 128)
         )
         
