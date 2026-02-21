@@ -182,14 +182,19 @@ try:
         val_losses.append(avg_v)
         val_log_ratio_history.append(l_ratio)
         grad_norm_history.append(np.mean(e_norms))
-        current_lr = optimizer.param_groups[0]['lr']
-        lr_history.append(current_lr)
+        lr_before = optimizer.param_groups[0]['lr']
+        lr_history.append(lr_before)
 
         if scheduler is not None:
             if args.scheduler == 'plateau':
                 scheduler.step(avg_v)
             else:
                 scheduler.step()
+            current_lr = optimizer.param_groups[0]['lr']
+            if current_lr < lr_before:
+                patience_counter = 0
+                print(f"-> LR reduced {lr_before:.2e} -> {current_lr:.2e}, patience reset")
+        current_lr = optimizer.param_groups[0]['lr']
 
         lr_str = f", LR: {current_lr:.2e}" if scheduler else ""
         print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}{lr_str}, Time: {time.time()-epoch_start:.2f}s")
