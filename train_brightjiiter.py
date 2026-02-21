@@ -44,6 +44,8 @@ parser.add_argument('--lr_patience', type=int, default=3, help='[plateau] Epochs
 parser.add_argument('--lr_factor', type=float, default=0.5, help='[plateau] LR multiplier when reducing')
 parser.add_argument('--min_lr', type=float, default=1e-6, help='[plateau/cosine] Minimum LR (eta_min for cosine)')
 parser.add_argument('--max_patience_reset', type=int, default=0, help='Max times to reset patience when LR drops (0=never, default; 1=once)')
+parser.add_argument('--jitter_brightness', type=float, default=0.2, help='ColorJitter brightness factor (default 0.2)')
+parser.add_argument('--jitter_contrast', type=float, default=0.2, help='ColorJitter contrast factor (default 0.2)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -105,7 +107,7 @@ else:
 # ---------------------------------------------------------
 # Data Augmentation (Brightness Jitter)
 # ---------------------------------------------------------
-jitter_transform = T.ColorJitter(brightness=0.2, contrast=0.2)
+jitter_transform = T.ColorJitter(brightness=args.jitter_brightness, contrast=args.jitter_contrast)
 
 # ---------------------------------------------------------
 # Training Loop
@@ -118,7 +120,7 @@ best_ap_dist, best_an_dist = [], []
 
 print(f"Starting training: {file_param_info}")
 sched_str = {"plateau": "ReduceLROnPlateau", "cosine": "CosineAnnealingLR"}.get(args.scheduler, "")
-print(f"Config: Adagrad + Jitter + Gradient Clipping (max_norm={args.max_norm})" + (" | Hard Mining" if args.hard_mining else "") + (f" | {sched_str}" if sched_str else ""))
+print(f"Config: Adagrad + Jitter(b={args.jitter_brightness}, c={args.jitter_contrast}) + Gradient Clipping (max_norm={args.max_norm})" + (" | Hard Mining" if args.hard_mining else "") + (f" | {sched_str}" if sched_str else ""))
 
 total_start_time = time.time()
 
