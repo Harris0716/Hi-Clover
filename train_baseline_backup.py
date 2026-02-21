@@ -86,7 +86,7 @@ optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate)
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
-best_val_loss = float('inf')
+best_val_loss = float('inf')  
 patience_counter = 0 
 train_losses, val_losses, val_log_ratio_history, grad_norm_history = [], [], [], []
 best_ap_dist, best_an_dist = [], []
@@ -94,67 +94,70 @@ best_ap_dist, best_an_dist = [], []
 print(f"Starting training: {file_param_info}")
 total_start_time = time.time()
 
-for epoch in range(args.epoch_training):
-    epoch_start = time.time()
-    model.train()
-    running_loss, e_norms = 0.0, []
-    
-    for i, data in enumerate(train_loader):
-        a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
-        optimizer.zero_grad()
-        a_out, p_out, n_out = model(a, p, n)
-        loss = criterion(a_out, p_out, n_out)
-        loss.backward()
+try:
+    for epoch in range(args.epoch_training):
+        epoch_start = time.time()
+        model.train()
+        running_loss, e_norms = 0.0, []
         
-        # [FIX] Gradient Clipping to prevent explosion on sensitive datasets (Liver/NPC)
-        grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
-        
-        # [FIX] Use .item() to fix GPU->Numpy error
-        e_norms.append(grad_norm.item()) 
-        
-        optimizer.step()
-        running_loss += loss.item()
-
-        if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
-            d_ap = F.pairwise_distance(a_out, p_out).mean().item()
-            d_an = F.pairwise_distance(a_out, n_out).mean().item()
-            print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {d_ap:.4f}, d(a,n): {d_an:.4f}")
-
-    # Validation Phase
-    model.eval()
-    val_loss_sum, c_ap, c_an = 0.0, [], []
-    with torch.no_grad():
-        for data in val_loader:
+        for i, data in enumerate(train_loader):
             a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
-            ao, po, no = model(a, p, n)
-            val_loss_sum += criterion(ao, po, no).item()
-            c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
-            c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
-    
-    avg_v = val_loss_sum / len(val_loader)
-    avg_ap, avg_an = np.mean(c_ap), np.mean(c_an)
-    l_ratio = np.log10((avg_an + 1e-6) / (avg_ap + 1e-6))
-    
-    train_losses.append(running_loss / len(train_loader))
-    val_losses.append(avg_v)
-    val_log_ratio_history.append(l_ratio)
-    grad_norm_history.append(np.mean(e_norms)) # Safe now (float list)
-
-    print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
-
-    if avg_v < best_val_loss:
-        best_val_loss = avg_v
-        patience_counter = 0
-        torch.save(model.state_dict(), base_save_path + '_best.ckpt')
-        best_ap_dist, best_an_dist = c_ap, c_an
-    else:
-        if epoch >= args.epoch_enforced_training:
-            patience_counter += 1
-            print(f"-> No improvement. Patience: {patience_counter}/{args.patience}")
+            optimizer.zero_grad()
+            a_out, p_out, n_out = model(a, p, n)
+            loss = criterion(a_out, p_out, n_out)
+            loss.backward()
             
-            if patience_counter >= args.patience:
-                print(f"Early stopping triggered at epoch {epoch+1}")
-                break
+            # [FIX] Gradient Clipping to prevent explosion on sensitive datasets (Liver/NPC)
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
+            
+            # [FIX] Use .item() to fix GPU->Numpy error
+            e_norms.append(grad_norm.item()) 
+            
+            optimizer.step()
+            running_loss += loss.item()
+
+            if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
+                d_ap = F.pairwise_distance(a_out, p_out).mean().item()
+                d_an = F.pairwise_distance(a_out, n_out).mean().item()
+                print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {d_ap:.4f}, d(a,n): {d_an:.4f}")
+
+        # Validation Phase
+        model.eval()
+        val_loss_sum, c_ap, c_an = 0.0, [], []
+        with torch.no_grad():
+            for data in val_loader:
+                a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
+                ao, po, no = model(a, p, n)
+                val_loss_sum += criterion(ao, po, no).item()
+                c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
+                c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
+        
+        avg_v = val_loss_sum / len(val_loader)
+        avg_ap, avg_an = np.mean(c_ap), np.mean(c_an)
+        l_ratio = np.log10((avg_an + 1e-6) / (avg_ap + 1e-6))
+        
+        train_losses.append(running_loss / len(train_loader))
+        val_losses.append(avg_v)
+        val_log_ratio_history.append(l_ratio)
+        grad_norm_history.append(np.mean(e_norms)) # Safe now (float list)
+
+        print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s")
+
+        if avg_v < best_val_loss:
+            best_val_loss = avg_v
+            patience_counter = 0
+            torch.save(model.state_dict(), base_save_path + '_best.ckpt')
+            best_ap_dist, best_an_dist = c_ap, c_an
+        else:
+            if epoch >= args.epoch_enforced_training:
+                patience_counter += 1
+                print(f"-> No improvement. Patience: {patience_counter}/{args.patience}")
+                
+                if patience_counter >= args.patience:
+                    print(f"Early stopping triggered at epoch {epoch+1}")
+                    break
+except KeyboardInterrupt:
+    print("\nTraining interrupted by user (Ctrl+C). Plotting loss curves...")
 
 # ---------------------------------------------------------
 # Visualization
@@ -169,11 +172,12 @@ ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log
 ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(args.max_norm, color='r', ls='--')
 fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}"); save_fig(fig1, '_training_stats.pdf')
 
-# Figure 2: Distance Distribution
-fig2 = plt.figure(figsize=(10, 7))
-plt.hist(best_ap_dist, bins=50, alpha=0.6, label='Positives d(a,p)', color='g', density=True)
-plt.hist(best_an_dist, bins=50, alpha=0.6, label='Negatives d(a,n)', color='r', density=True)
-plt.title(f"Best Model Distance Distribution\n{file_param_info}"); plt.legend()
-save_fig(fig2, '_val_dist_hist.pdf')
+# Figure 2: Distance Distribution (skip if interrupted before first best model)
+if best_ap_dist and best_an_dist:
+    fig2 = plt.figure(figsize=(10, 7))
+    plt.hist(best_ap_dist, bins=50, alpha=0.6, label='Positives d(a,p)', color='g', density=True)
+    plt.hist(best_an_dist, bins=50, alpha=0.6, label='Negatives d(a,n)', color='r', density=True)
+    plt.title(f"Best Model Distance Distribution\n{file_param_info}"); plt.legend()
+    save_fig(fig2, '_val_dist_hist.pdf')
 
 print(f"Training Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
