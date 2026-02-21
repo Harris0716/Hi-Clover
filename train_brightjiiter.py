@@ -43,6 +43,7 @@ parser.add_argument('--scheduler', type=str, default='plateau', choices=['platea
 parser.add_argument('--lr_patience', type=int, default=3, help='[plateau] Epochs without val improvement before reducing LR')
 parser.add_argument('--lr_factor', type=float, default=0.5, help='[plateau] LR multiplier when reducing')
 parser.add_argument('--min_lr', type=float, default=1e-6, help='[plateau/cosine] Minimum LR (eta_min for cosine)')
+parser.add_argument('--max_patience_reset', type=int, default=0, help='Max times to reset patience when LR drops (0=never, default; 1=once)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -110,7 +111,8 @@ jitter_transform = T.ColorJitter(brightness=0.2, contrast=0.2)
 # Training Loop
 # ---------------------------------------------------------
 best_val_loss = float('inf')
-patience_counter = 0 
+patience_counter = 0
+patience_reset_count = 0
 train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history = [], [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
@@ -191,9 +193,10 @@ try:
             else:
                 scheduler.step()
             current_lr = optimizer.param_groups[0]['lr']
-            if current_lr < lr_before:
+            if current_lr < lr_before and patience_reset_count < args.max_patience_reset:
                 patience_counter = 0
-                print(f"-> LR reduced {lr_before:.2e} -> {current_lr:.2e}, patience reset")
+                patience_reset_count += 1
+                print(f"-> LR reduced {lr_before:.2e} -> {current_lr:.2e}, patience reset ({patience_reset_count}/{args.max_patience_reset})")
         current_lr = optimizer.param_groups[0]['lr']
 
         lr_str = f", LR: {current_lr:.2e}" if scheduler else ""
@@ -239,7 +242,6 @@ finally:
         plt.title(f"Best Model Distance Distribution\n{file_param_info}"); plt.legend()
         save_fig(fig2, '_val_dist_hist.pdf')
         print(f"Saved: {base_save_path}_val_dist_hist.pdf")
-
     print(f"Training Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
 
     # Optional: run test.py for intersect & performance metrics
