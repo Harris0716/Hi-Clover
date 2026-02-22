@@ -5,7 +5,7 @@
 # 用法: bash Hi-Clover/run_baseline_all_datasets.sh
 
 BASELINE_OPTS="--batch_size 128 --epoch_training 100 --epoch_enforced_training 20 \
-  --patience 10 --margin 0.5 --max_norm 1.0 \
+  --patience 5 --margin 0.5 --max_norm 1.0 \
   --seed 42 --mask true \
   --scheduler plateau --lr_patience 2"
 
