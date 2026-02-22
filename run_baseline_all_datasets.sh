@@ -9,7 +9,7 @@ BASELINE_OPTS="--batch_size 128 --epoch_training 100 --epoch_enforced_training 2
   --seed 42 --mask true \
   --scheduler plateau --lr_patience 2"
 
-for DATA in liver NPC TCell; do
+for DATA in NPC TCell; do
   echo "=========================================="
   echo "Running baseline on: $DATA"
   echo "=========================================="
