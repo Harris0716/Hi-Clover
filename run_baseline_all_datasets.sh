@@ -7,7 +7,8 @@
 BASELINE_OPTS="--batch_size 128 --epoch_training 100 --epoch_enforced_training 20 \
   --patience 5 --margin 0.5 --max_norm 1.0 \
   --seed 42 --mask true \
-  --scheduler plateau --lr_patience 2"
+  --scheduler plateau --lr_patience 2 \
+  --weight_decay 1e-4"
 
 for DATA in NPC TCell; do
   echo "=========================================="

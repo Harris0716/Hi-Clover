@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision.transforms as T
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import argparse, json, os, time
@@ -40,6 +41,8 @@ parser.add_argument('--lr_factor', type=float, default=0.5, help='[plateau] LR m
 parser.add_argument('--min_lr', type=float, default=1e-6, help='[plateau] Minimum LR')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='L2 weight decay for Adagrad (e.g. 1e-4, 1e-3 to reduce overfitting)')
 parser.add_argument('--num_workers', type=int, default=4, help='DataLoader workers (use 0 to avoid shm error with large batch)')
+parser.add_argument('--jitter_brightness', type=float, default=0.0, help='ColorJitter brightness (0=off, e.g. 0.2 for augmentation)')
+parser.add_argument('--jitter_contrast', type=float, default=0.0, help='ColorJitter contrast (0=off, e.g. 0.2 for augmentation)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -92,6 +95,10 @@ scheduler = None
 if args.scheduler == 'plateau':
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
 
+# Jitter (use ColorJitter only when brightness or contrast > 0)
+use_jitter = args.jitter_brightness > 0 or args.jitter_contrast > 0
+jitter_transform = T.ColorJitter(brightness=args.jitter_brightness or 0.0, contrast=args.jitter_contrast or 0.0) if use_jitter else None
+
 # ---------------------------------------------------------
 # Training Loop
 # ---------------------------------------------------------
@@ -101,7 +108,8 @@ train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history =
 best_ap_dist, best_an_dist = [], []
 
 wd_str = f" | weight_decay={args.weight_decay}" if args.weight_decay > 0 else ""
-print(f"Starting training: {file_param_info}" + (f" | Scheduler: ReduceLROnPlateau(patience={args.lr_patience}, factor={args.lr_factor})" if scheduler else "") + wd_str)
+jitter_str = f" | Jitter(b={args.jitter_brightness}, c={args.jitter_contrast})" if use_jitter else ""
+print(f"Starting training: {file_param_info}" + (f" | Scheduler: ReduceLROnPlateau(patience={args.lr_patience}, factor={args.lr_factor})" if scheduler else "") + wd_str + jitter_str)
 total_start_time = time.time()
 
 try:
@@ -112,6 +120,8 @@ try:
         
         for i, data in enumerate(train_loader):
             a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
+            if jitter_transform is not None:
+                a, p, n = jitter_transform(a), jitter_transform(p), jitter_transform(n)
             optimizer.zero_grad()
             a_out, p_out, n_out = model(a, p, n)
             loss = criterion(a_out, p_out, n_out)
