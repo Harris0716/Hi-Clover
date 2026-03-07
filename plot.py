@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-data_dir = "./" 
+data_dir = "0223_final/npz" 
 
 # 為了確保標題大小寫正確，將檔名與顯示名稱分開設定
 file_prefixes = ['liver', 'NPC', 'TCell']  
