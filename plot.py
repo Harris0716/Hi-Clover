@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 
 # 設定您的檔案所在目錄 (請替換為實際的 m_dir 路徑)
-data_dir = "./" 
+data_dir = "0223_final/npz" 
 
 # 定義矩陣結構 (需與您存檔的 cell_name 一致)
 datasets = ['Liver', 'NPC', 'TCell']  
