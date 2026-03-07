@@ -72,7 +72,7 @@ val_dataset = GroupedTripletHiCDataset([
     TripletHiCDataset([HiCDatasetDec.load(p) for p in dataset_config[n]["validation"]], 
     reference=reference_genomes[dataset_config[n]["reference"]]) for n in args.data_inputs])
 
-# 計算生成的triplets數量
+# calculate the number of triplets generated
 num_train_triplets = len(train_dataset)
 num_val_triplets = len(val_dataset)
 print(f"num_train_triplets: {num_train_triplets:,}") 
