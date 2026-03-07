@@ -2,32 +2,31 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-# 設定您的檔案所在目錄 (請替換為實際的 m_dir 路徑)
-data_dir = "0223_final/npz" 
+data_dir = "./" 
 
-# 定義矩陣結構 (需與您存檔的 cell_name 一致)
-datasets = ['liver', 'NPC', 'TCell']  
+# 為了確保標題大小寫正確，將檔名與顯示名稱分開設定
+file_prefixes = ['liver', 'NPC', 'TCell']  
+display_names = ['Liver', 'NPC', 'T Cell']
 phases = ['train_val', 'test']
 phase_labels = ['Train / Val', 'Test']
 
-fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=True)
+# 【關鍵修正 1】：修改長寬比為 (15, 9) 讓子圖更接近黃金比例
+# 【關鍵修正 2】：將 sharey=True 改為 sharey='col' (按欄共用 Y 軸)
+fig, axes = plt.subplots(2, 3, figsize=(15, 9), sharex=True, sharey='col')
 
 for i, phase in enumerate(phases):
-    for j, cell in enumerate(datasets):
+    for j, cell in enumerate(file_prefixes):
         ax = axes[i, j]
         file_path = os.path.join(data_dir, f"{cell}_{phase}_raw_dist.npz")
         
         if os.path.exists(file_path):
-            # 讀取數據
             data = np.load(file_path)
             dist = data['dist']
             lbl = data['lbl']
             threshold = data['threshold']
             
-            # 建立與原程式相同的 bin 範圍
             rng = np.linspace(dist.min(), np.percentile(dist, 99.5), 200)
             
-            # 繪製 Histogram (保持原程式的顏色與透明度設定)
             ax.hist(dist[lbl == 0], bins=rng, density=True, alpha=0.5, color='#108690', label='Replicates')
             ax.hist(dist[lbl == 1], bins=rng, density=True, alpha=0.5, color='#1D1E4E', label='Conditions')
             ax.axvline(threshold, color='k', ls='--', linewidth=1.5, label='Threshold')
@@ -36,24 +35,25 @@ for i, phase in enumerate(phases):
 
         # 設定第一列的標題
         if i == 0:
-            ax.set_title(cell, fontsize=16, fontweight='bold', pad=12)
+            ax.set_title(display_names[j], fontsize=18, fontweight='bold', pad=15)
 
 # 全域座標軸標籤
-fig.supxlabel("Euclidean Distance", fontsize=16, y=0.04)
-fig.supylabel("Probability Density", fontsize=16, x=0.04)
+fig.supxlabel("Euclidean Distance", fontsize=18, y=0.02)
+fig.supylabel("Probability Density", fontsize=18, x=0.02)
 
 # 列標示 (Train/Test)
-fig.text(0.06, 0.75, phase_labels[0], va='center', rotation='vertical', fontsize=16, fontweight='bold')
-fig.text(0.06, 0.25, phase_labels[1], va='center', rotation='vertical', fontsize=16, fontweight='bold')
+fig.text(0.04, 0.72, phase_labels[0], va='center', rotation='vertical', fontsize=18, fontweight='bold')
+fig.text(0.04, 0.28, phase_labels[1], va='center', rotation='vertical', fontsize=18, fontweight='bold')
 
-# 全域單一圖例 (擷取第一張圖的圖例即可)
+# 全域圖例
 handles, labels = axes[0, 0].get_legend_handles_labels()
-# 將 Threshold 標籤簡化，因各圖閾值可能微幅不同，統一標示意義即可
-labels = ['Replicates', 'Conditions', 'Decision Threshold']
-fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, fontsize=14, frameon=False)
+# 將文字稍微修飾得更具論文專業感
+labels = ['Replicates (Positive pairs)', 'Conditions (Negative pairs)', 'Decision Threshold']
+fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, fontsize=15, frameon=False)
 
-# 精確調整邊距，消除白邊
-plt.subplots_adjust(left=0.1, right=0.98, top=0.88, bottom=0.12, wspace=0.05, hspace=0.05)
+# 【關鍵修正 3】：微調子圖間距
+# 因為現在每欄都有獨立的 Y 軸，wspace (左右間距) 必須適度加大至 0.15，避免刻度文字與左側圖片重疊
+plt.subplots_adjust(left=0.08, right=0.98, top=0.88, bottom=0.10, wspace=0.15, hspace=0.08)
 
-plt.savefig('combined_latent_space_distribution.pdf', dpi=300, bbox_inches='tight')
+plt.savefig('combined_latent_space_distribution_proportional.pdf', dpi=300, bbox_inches='tight')
 plt.show()
