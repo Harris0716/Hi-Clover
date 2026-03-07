@@ -8,7 +8,7 @@ data_dir = "0223_final/npz"
 file_prefixes = ['liver', 'NPC', 'TCell']  
 display_names = ['Liver', 'NPC', 'T Cell']
 phases = ['train_val', 'test']
-phase_labels = ['Train / Val', 'Test']
+phase_labels = ['Train + Val', 'Test']
 
 # 【關鍵修正 1】：修改長寬比為 (15, 9) 讓子圖更接近黃金比例
 # 【關鍵修正 2】：將 sharey=True 改為 sharey='col' (按欄共用 Y 軸)
