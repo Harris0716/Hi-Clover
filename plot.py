@@ -48,7 +48,7 @@ fig.text(0.04, 0.28, phase_labels[1], va='center', rotation='vertical', fontsize
 # 全域圖例
 handles, labels = axes[0, 0].get_legend_handles_labels()
 # 將文字稍微修飾得更具論文專業感
-labels = ['Replicates (Positive pairs)', 'Conditions (Negative pairs)', 'Decision Threshold']
+labels = ['Replicates', 'Conditions', 'Decision Threshold']
 fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, fontsize=15, frameon=False)
 
 # 【關鍵修正 3】：微調子圖間距
