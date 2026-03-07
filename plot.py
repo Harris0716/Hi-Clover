@@ -6,7 +6,7 @@ import os
 data_dir = "0223_final/npz" 
 
 # 定義矩陣結構 (需與您存檔的 cell_name 一致)
-datasets = ['Liver', 'NPC', 'TCell']  
+datasets = ['liver', 'NPC', 'TCell']  
 phases = ['train_val', 'test']
 phase_labels = ['Train / Val', 'Test']
 
