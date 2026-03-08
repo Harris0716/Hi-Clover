@@ -55,12 +55,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-class SoftTripletLoss(nn.Module):
-    def forward(self, anchor, positive, negative):
-        d_ap = F.pairwise_distance(anchor, positive, p=2)
-        d_an = F.pairwise_distance(anchor, negative, p=2)
-        diff = d_ap - d_an
-        return F.softplus(diff).mean()
+# class SoftTripletLoss(nn.Module):
+#     def forward(self, anchor, positive, negative):
+#         d_ap = F.pairwise_distance(anchor, positive, p=2)
+#         d_an = F.pairwise_distance(anchor, negative, p=2)
+#         diff = d_ap - d_an
+#         return F.softplus(diff).mean()
 
 # ---------------------------------------------------------
 # parameters
@@ -97,8 +97,8 @@ val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(v
 model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
-# criterion = TripletLoss(margin=args.margin)
-criterion = SoftTripletLoss()
+criterion = TripletLoss(margin=args.margin)
+# criterion = SoftTripletLoss()
 optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
 scheduler = None
