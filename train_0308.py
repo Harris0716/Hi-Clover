@@ -117,6 +117,7 @@ patience_counter = 0
 train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history = [], [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
+wd_str = f" | weight_decay={args.weight_decay}" if args.weight_decay > 0 else ""
 semi_str = " | Semi-Hard Mining: ON" if args.semi_hard else ""
 print(f"Starting training: {file_param_info}" + (f" | Scheduler: ReduceLROnPlateau" if scheduler else "") + wd_str + semi_str)
 total_start_time = time.time()
