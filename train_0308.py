@@ -40,9 +40,9 @@ parser.add_argument('--lr_patience', type=int, default=3, help='[plateau] Epochs
 parser.add_argument('--lr_factor', type=float, default=0.5, help='[plateau] LR multiplier when reducing')
 parser.add_argument('--min_lr', type=float, default=1e-6, help='[plateau] Minimum LR')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='L2 weight decay for Adagrad (e.g. 1e-4, 1e-3 to reduce overfitting)')
-# [新增] 梯度累積步數：欲達到 Batch Size N，則設定 batch_size=128, accumulation_steps=N/128
 parser.add_argument('--accumulation_steps', type=int, default=1, help='Number of steps to accumulate gradients before updating weights')
 parser.add_argument('--num_workers', type=int, default=4, help='DataLoader workers (use 0 to avoid shm error with large batch)')
+parser.add_argument('--semi_hard', action='store_true', help='Use Semi-Hard Negative Mining (dist_ap < dist_an < dist_ap + margin)')
 parser.add_argument('--jitter_brightness', type=float, default=0.0, help='ColorJitter brightness (0=off, e.g. 0.2 for augmentation)')
 parser.add_argument('--jitter_contrast', type=float, default=0.0, help='ColorJitter contrast (0=off, e.g. 0.2 for augmentation)')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
@@ -117,12 +117,10 @@ patience_counter = 0
 train_losses, val_losses, val_log_ratio_history, grad_norm_history, lr_history = [], [], [], [], []
 best_ap_dist, best_an_dist = [], []
 
-wd_str = f" | weight_decay={args.weight_decay}" if args.weight_decay > 0 else ""
-jitter_str = f" | Jitter(b={args.jitter_brightness}, c={args.jitter_contrast})" if use_jitter else ""
-print(f"Starting training: {file_param_info}" + (f" | Scheduler: ReduceLROnPlateau(patience={args.lr_patience}, factor={args.lr_factor})" if scheduler else "") + wd_str + jitter_str)
+semi_str = " | Semi-Hard Mining: ON" if args.semi_hard else ""
+print(f"Starting training: {file_param_info}" + (f" | Scheduler: ReduceLROnPlateau" if scheduler else "") + wd_str + semi_str)
 total_start_time = time.time()
 
-# 設定累積步數，例如想要達到 batch_size * 2 的效果就設為 2
 accumulation_steps = args.accumulation_steps
 
 try:
@@ -131,7 +129,6 @@ try:
         model.train()
         running_loss, e_norms = 0.0, []
         
-        # 在每個 epoch 開始前清空梯度
         optimizer.zero_grad()
         
         for i, data in enumerate(train_loader):
@@ -141,28 +138,41 @@ try:
             
             # 1. Forward pass
             a_out, p_out, n_out = model(a, p, n)
-            loss = criterion(a_out, p_out, n_out)
             
-            # 2. 正規化 Loss (因為梯度會累積，所以要除以累積步數)
+            # [新增] Semi-Hard Mining 邏輯
+            if args.semi_hard:
+                with torch.no_grad():
+                    # 計算歐氏距離
+                    d_ap_batch = F.pairwise_distance(a_out, p_out)
+                    d_an_batch = F.pairwise_distance(a_out, n_out)
+                    # 篩選條件：d(a,p) < d(a,n) < d(a,p) + margin
+                    mask = (d_an_batch > d_ap_batch) & (d_an_batch < d_ap_batch + args.margin)
+                
+                # 如果該 batch 有符合條件的樣本，則只對這些樣本計算 Loss
+                if mask.any():
+                    loss = criterion(a_out[mask], p_out[mask], n_out[mask])
+                else:
+                    # 如果沒有符合條件的，損失設為 0 (保持梯度累積結構)
+                    loss = torch.tensor(0.0, device=device, requires_grad=True)
+            else:
+                # 原始全量計算
+                loss = criterion(a_out, p_out, n_out)
+            
+            # 2. 正規化與反向傳播
             loss = loss / accumulation_steps
-            
-            # 3. Backward pass (梯度會累加到 .grad 中)
             loss.backward()
             
-            # 4. 當達到累積步數或是跑完最後一個 batch 時，才更新權重
+            # 3. 累積更新
             if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
-                # Gradient Clipping
                 grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
                 e_norms.append(grad_norm.item()) 
-                
-                # 更新權重並清空梯度
                 optimizer.step()
                 optimizer.zero_grad()
 
-            # 統計時將 Loss 乘回 accumulation_steps 以獲得原始數值
             running_loss += loss.item() * accumulation_steps
 
             if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
+                # 監控時顯示當前樣本的距離情況
                 d_ap = F.pairwise_distance(a_out, p_out).mean().item()
                 d_an = F.pairwise_distance(a_out, n_out).mean().item()
                 print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {d_ap:.4f}, d(a,n): {d_an:.4f}")
