@@ -46,6 +46,7 @@ parser.add_argument('--semi_hard', action='store_true', help='Use Semi-Hard Nega
 parser.add_argument('--jitter_brightness', type=float, default=0.0, help='ColorJitter brightness (0=off, e.g. 0.2 for augmentation)')
 parser.add_argument('--jitter_contrast', type=float, default=0.0, help='ColorJitter contrast (0=off, e.g. 0.2 for augmentation)')
 parser.add_argument('--anti_diag_flip', action='store_true', help='[新增] 50% 機率執行沿次對角線 (y=-x) 翻轉')
+parser.add_argument('--optimizer', type=str, default='adagrad', choices=['adagrad', 'adamw'], help='Optimizer choice: adagrad or adamw')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -92,7 +93,10 @@ model = eval("models." + args.model_name)(mask=args.mask).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
 criterion = TripletLoss(margin=args.margin)
-optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+if args.optimizer == 'adamw':
+    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+else:
+    optimizer = optim.Adagrad(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
 scheduler = None
 if args.scheduler == 'plateau':
