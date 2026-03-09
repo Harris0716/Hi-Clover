@@ -121,7 +121,8 @@ def main():
     phase_labels = ['Train + Val', 'Test']
     cmap = ListedColormap(['#1F77B4', '#AEC7E8', '#D62728', '#FF9896'])
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharex=False, sharey=False)
+    # 縮小 figsize 以達到更緊湊的視覺效果
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9), sharex=False, sharey=False)
 
     for i, phase in enumerate(phases):
         for j, cell in enumerate(cell_configs):
@@ -136,16 +137,13 @@ def main():
             # 繪製散佈圖
             scat = ax.scatter(res_umap[:, 0], res_umap[:, 1], c=lbls, cmap=cmap, s=5, alpha=0.6)
             
-            # 子圖標題與輪廓係數
+            # 子圖標題與輪廓係數 (分離粗體標題與常規字體分數)
             if i == 0:
-                # 獨立繪製粗體的細胞名稱 (位於子圖最上方)
-                ax.text(0.5, 1.12, cell['display'], transform=ax.transAxes, 
-                        ha='center', va='bottom', fontsize=14, fontweight='bold')
-                # 設定非粗體的輪廓係數
+                ax.text(0.5, 1.15, cell['display'], transform=ax.transAxes, 
+                        ha='center', va='bottom', fontsize=16, fontweight='bold')
                 ax.set_title(f"Silhouette Score: {sil_score:.4f}", 
                              fontsize=12, fontweight='normal', pad=8)
             else:
-                # 第二列僅顯示非粗體的輪廓係數
                 ax.set_title(f"Silhouette Score: {sil_score:.4f}", 
                              fontsize=12, fontweight='normal', pad=8)
 
@@ -158,15 +156,17 @@ def main():
                                loc='best', fontsize=8, title="Sample ID")
             legend.get_title().set_fontsize('9')
 
-    fig.supxlabel("UMAP Dimension 1", fontsize=16, y=0.02)
-    fig.supylabel("UMAP Dimension 2", fontsize=16, x=0.02)
+    fig.supxlabel("UMAP Dimension 1", fontsize=14, y=0.02)
+    fig.supylabel("UMAP Dimension 2", fontsize=14, x=0.02)
 
-    fig.text(0.04, 0.72, phase_labels[0], va='center', rotation='vertical', fontsize=18, fontweight='bold')
-    fig.text(0.04, 0.28, phase_labels[1], va='center', rotation='vertical', fontsize=18, fontweight='bold')
+    fig.text(0.02, 0.72, phase_labels[0], va='center', rotation='vertical', fontsize=16, fontweight='bold')
+    fig.text(0.02, 0.28, phase_labels[1], va='center', rotation='vertical', fontsize=16, fontweight='bold')
 
-    plt.subplots_adjust(left=0.08, right=0.98, top=0.90, bottom=0.08, wspace=0.15, hspace=0.15)
+    # 大幅縮減子圖間的水平與垂直間距，減少留白
+    plt.subplots_adjust(left=0.06, right=0.98, top=0.88, bottom=0.06, wspace=0.05, hspace=0.15)
     
-    plt.savefig(args.out_pdf, dpi=300, bbox_inches='tight')
+    # 儲存圖片時強制消除邊緣白邊 (pad_inches=0.01)
+    plt.savefig(args.out_pdf, dpi=300, bbox_inches='tight', pad_inches=0.01)
     print(f"Plot saved successfully as {args.out_pdf}")
 
 if __name__ == '__main__':
