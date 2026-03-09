@@ -138,9 +138,16 @@ def main():
             
             # 子圖標題與輪廓係數
             if i == 0:
-                ax.set_title(f"{cell['display']}\nSilhouette Score: {sil_score:.4f}", fontsize=14, fontweight='bold', pad=10)
+                # 獨立繪製粗體的細胞名稱 (位於子圖最上方)
+                ax.text(0.5, 1.12, cell['display'], transform=ax.transAxes, 
+                        ha='center', va='bottom', fontsize=14, fontweight='bold')
+                # 設定非粗體的輪廓係數
+                ax.set_title(f"Silhouette Score: {sil_score:.4f}", 
+                             fontsize=12, fontweight='normal', pad=8)
             else:
-                ax.set_title(f"Silhouette Score: {sil_score:.4f}", fontsize=12, pad=10)
+                # 第二列僅顯示非粗體的輪廓係數
+                ax.set_title(f"Silhouette Score: {sil_score:.4f}", 
+                             fontsize=12, fontweight='normal', pad=8)
 
             # 隱藏座標軸刻度以保持版面整潔
             ax.set_xticks([])
