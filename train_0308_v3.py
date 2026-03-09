@@ -249,24 +249,52 @@ except KeyboardInterrupt:
 # Visualization
 # ---------------------------------------------------------
 def save_fig(fig, suffix):
-    plt.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(base_save_path + suffix, dpi=300); plt.close(fig)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.savefig(base_save_path + suffix, dpi=300)
+    plt.close(fig)
+
+# 彙整詳細參數資訊用於圖表標題
+aug_features = []
+if args.anti_diag_flip: aug_features.append("AntiDiag")
+if args.h_flip: aug_features.append("HFlip")
+if args.semi_hard: aug_features.append("SemiHard")
+aug_str = f" | {'+'.join(aug_features)}" if aug_features else ""
+sched_str = " | ReduceLROnPlateau" if scheduler else ""
+
+info_text = (f"Opt: {args.optimizer.upper()} | LR: {args.learning_rate} | WD: {args.weight_decay} | "
+             f"Margin: {args.margin} | Batch: {args.batch_size}{aug_str}{sched_str}")
 
 # Figure 1: Training Stats
 n_plots = 4 if lr_history and len(set(lr_history)) > 1 else 3
 fig1, ax = plt.subplots(1, n_plots, figsize=(6 * n_plots, 6))
-ax[0].plot(train_losses, label='Train'); ax[0].plot(val_losses, label='Val'); ax[0].set_title('Loss Evolution'); ax[0].legend()
-ax[1].plot(val_log_ratio_history, color='blue'); ax[1].set_title('Log-Ratio (log(a_n/a_p))'); ax[1].axhline(0, color='k', ls='--')
-ax[2].plot(grad_norm_history, color='teal'); ax[2].set_title('Gradient Norm'); ax[2].axhline(args.max_norm, color='r', ls='--')
+ax[0].plot(train_losses, label='Train')
+ax[0].plot(val_losses, label='Val')
+ax[0].set_title('Loss Evolution')
+ax[0].legend()
+
+ax[1].plot(val_log_ratio_history, color='blue')
+ax[1].set_title('Log-Ratio (log(a_n/a_p))')
+ax[1].axhline(0, color='k', ls='--')
+
+ax[2].plot(grad_norm_history, color='teal')
+ax[2].set_title('Gradient Norm')
+ax[2].axhline(args.max_norm, color='r', ls='--')
+
 if n_plots == 4:
-    ax[3].plot(lr_history, color='orange'); ax[3].set_title('Learning Rate'); ax[3].set_yscale('log')
-fig1.suptitle(f"Training Metrics | Model: {args.model_name}\nLR: {args.learning_rate} | Margin: {args.margin}" + (" | ReduceLROnPlateau" if scheduler else "")); save_fig(fig1, '_training_stats.pdf')
+    ax[3].plot(lr_history, color='orange')
+    ax[3].set_title('Learning Rate')
+    ax[3].set_yscale('log')
+
+fig1.suptitle(f"Training Metrics | Model: {args.model_name}\n{info_text}")
+save_fig(fig1, '_training_stats.pdf')
 
 # Figure 2: Distance Distribution (skip if interrupted before first best model)
 if best_ap_dist and best_an_dist:
     fig2 = plt.figure(figsize=(10, 7))
     plt.hist(best_ap_dist, bins=50, alpha=0.6, label='Positives d(a,p)', color='g', density=True)
     plt.hist(best_an_dist, bins=50, alpha=0.6, label='Negatives d(a,n)', color='r', density=True)
-    plt.title(f"Best Model Distance Distribution\n{file_param_info}"); plt.legend()
+    plt.title(f"Best Model Distance Distribution\nModel: {args.model_name}\n{info_text}")
+    plt.legend()
     save_fig(fig2, '_val_dist_hist.pdf')
 
 print(f"Training Complete. Total Time: {(time.time()-total_start_time)/60:.2f} mins")
