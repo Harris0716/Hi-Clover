@@ -198,18 +198,18 @@ for subset in ["train_val", "test"]:
     #           
     # plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
 
-    # --- 3. UMAP (Improved Title) ---
-    # print(f"Calculating UMAP for {subset}...")
-    # res_umap = umap.UMAP(random_state=42, n_neighbors=80, min_dist=0.1, metric='euclidean').fit_transform(embs)
-    # plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
-    # plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Sample ID")
+    --- 3. UMAP (Improved Title) ---
+    print(f"Calculating UMAP for {subset}...")
+    res_umap = umap.UMAP(random_state=42, n_neighbors=80, min_dist=0.1, metric='euclidean').fit_transform(embs)
+    plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
+    plt.legend(handles=scat.legend_elements()[0], labels=lgd, title="Sample ID")
     
-    # plt.title(f"Latent Space: UMAP Projection | {cell_title} ({subset_name})\n"
-    #           f"{param_info}\n"
-    #           f"Silhouette Score: {sil_score:.4f}", 
-    #           fontsize=12, fontweight='bold')
+    plt.title(f"Latent Space: UMAP Projection | {cell_title} ({subset_name})\n"
+              f"{param_info}\n"
+              f"Silhouette Score: {sil_score:.4f}", 
+              fontsize=12, fontweight='bold')
               
-    # plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_umap.pdf"), bbox_inches='tight'); plt.close()
+    plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_umap.pdf"), bbox_inches='tight'); plt.close()
 
 # ---------------------------------------------------------
 # Output Summary (CSV organized for readability)
