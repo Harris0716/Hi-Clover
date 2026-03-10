@@ -118,8 +118,6 @@ class TripletLeNet(TripletNet):
 #         x = self.linear(x)
 #         return F.normalize(x, p=2, dim=1)
 
-import torch.nn as nn
-import torch.nn.functional as F
 
 class TripletLeNetBatchNorm(TripletNet):
     '''with batch norm and spatial feature preservation'''
@@ -167,6 +165,68 @@ class TripletLeNetBatchNorm(TripletNet):
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
+
+class TripletLeNetBatchNormImproved(TripletNet):
+    '''Improved architecture with progressive downsampling and wider receptive field'''
+    def __init__(self, mask=False):
+        super(TripletLeNetBatchNormImproved, self).__init__(mask=mask)
+        
+        self.features = nn.Sequential(
+            # Block 1: 輸入 256x256 -> 輸出 128x128
+            # 使用 3x3 卷積搭配 padding=1 以維持卷積後的空間維度，交由 MaxPool 進行降維
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.GELU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
+            # Block 2: 輸入 128x128 -> 輸出 64x64
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.GELU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
+            # Block 3: 輸入 64x64 -> 輸出 32x32
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.GELU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            # Block 4: 輸入 32x32 -> 輸出 16x16
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.GELU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
+            # 經過四次池化後，空間特徵為 16x16，此時進行 4x4 的自適應池化，壓縮比例大幅降低
+            nn.AdaptiveAvgPool2d((4, 4)) 
+        )
+        
+        self.linear = nn.Sequential(
+            # 輸入維度調整為: 256 個通道 * 4 * 4 的空間特徵 = 4096
+            nn.Linear(4096, 512),
+            nn.BatchNorm1d(512),
+            nn.GELU(),
+            nn.Dropout(p=0.5),
+            # 最終輸出維持 128 維度以供 Triplet Loss 計算
+            nn.Linear(512, 128)
+        )
+        
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                # 將 Xavier 替換為 Kaiming 初始化，非線性設定為 relu 以近似 GELU 的特性
+                nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward_one(self, x):
+        x = self.mask_data(x)
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        return F.normalize(x, p=2, dim=1)
 
 class TripletLeNetLayerNorm(TripletNet):
     """
