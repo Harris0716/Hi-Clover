@@ -198,7 +198,7 @@ class TripletLeNetBatchNormImproved(TripletNet):
             nn.MaxPool2d(kernel_size=2, stride=2),
             
             # 經過四次池化後，空間特徵為 16x16，此時進行 4x4 的自適應池化，壓縮比例大幅降低
-            nn.AdaptiveAvgPool2d((4, 4)) 
+            # nn.AdaptiveAvgPool2d((4, 4)) 
         )
         
         self.linear = nn.Sequential(
