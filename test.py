@@ -198,7 +198,7 @@ for subset in ["train_val", "test"]:
     #           
     # plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_tsne.pdf"), bbox_inches='tight'); plt.close()
 
-    --- 3. UMAP (Improved Title) ---
+    #--- 3. UMAP (Improved Title) ---
     print(f"Calculating UMAP for {subset}...")
     res_umap = umap.UMAP(random_state=42, n_neighbors=80, min_dist=0.1, metric='euclidean').fit_transform(embs)
     plt.figure(figsize=(10, 8)); scat = plt.scatter(res_umap[:,0], res_umap[:,1], c=detailed_lbls, cmap=cmap, s=10, alpha=0.5)
