@@ -165,15 +165,13 @@ class TripletLeNetBatchNorm(TripletNet):
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
-
 class TripletLeNetBatchNormImproved(TripletNet):
-    '''Improved architecture with progressive downsampling and wider receptive field'''
+    '''Improved architecture with progressive downsampling and Global Average Pooling'''
     def __init__(self, mask=False):
         super(TripletLeNetBatchNormImproved, self).__init__(mask=mask)
         
         self.features = nn.Sequential(
             # Block 1: 輸入 256x256 -> 輸出 128x128
-            # 使用 3x3 卷積搭配 padding=1 以維持卷積後的空間維度，交由 MaxPool 進行降維
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.GELU(),
@@ -195,15 +193,13 @@ class TripletLeNetBatchNormImproved(TripletNet):
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            # 經過四次池化後，空間特徵為 16x16，此時進行 4x4 的自適應池化，壓縮比例大幅降低
-            # nn.AdaptiveAvgPool2d((4, 4)) 
+            nn.MaxPool2d(kernel_size=2, stride=2)
+            # 移除原先的 nn.AdaptiveAvgPool2d((4, 4))
         )
         
         self.linear = nn.Sequential(
-            # 輸入維度調整為: 256 個通道 * 4 * 4 的空間特徵 = 4096
-            nn.Linear(4096, 512),
+            # 經全局平均池化後，空間維度降為 1x1，輸入維度對齊通道數 256
+            nn.Linear(256, 512),
             nn.BatchNorm1d(512),
             nn.GELU(),
             nn.Dropout(p=0.5),
@@ -224,7 +220,13 @@ class TripletLeNetBatchNormImproved(TripletNet):
     def forward_one(self, x):
         x = self.mask_data(x)
         x = self.features(x)
+        
+        # 引入全局平均池化 (GAP)，將 [Batch, 256, 16, 16] 壓縮為 [Batch, 256, 1, 1]
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        
+        # 展平為 [Batch, 256]
         x = x.view(x.size(0), -1)
+        
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
