@@ -242,7 +242,10 @@ try:
         if avg_v < best_val_loss:
             best_val_loss = avg_v
             patience_counter = 0
-            torch.save(model.state_dict(), base_save_path + '_best.ckpt')
+            
+            current_date = time.strftime("%Y%m%d")
+            torch.save(model.state_dict(), f"{base_save_path}_{current_date}_best.ckpt")
+            
             best_ap_dist, best_an_dist = c_ap, c_an
         else:
             if epoch >= args.epoch_enforced_training:
