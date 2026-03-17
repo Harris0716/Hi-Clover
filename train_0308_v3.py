@@ -25,11 +25,10 @@ from HiSiNet.reference_dictionaries import reference_genomes
 parser = argparse.ArgumentParser(description='Triplet network (v1 logic with fixed naming)')
 parser.add_argument('--model_name', type=str, help='Model from models.py')
 parser.add_argument('--json_file', type=str, help='JSON dictionary with file paths')
-parser.add_argument('--learning_rate', type=float, help='Learning rate')
+parser.add_argument('--learning_rate', type=float,default=1e-3, help='Learning rate')
 parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
 parser.add_argument('--epoch_training', type=int, default=100, help='Max epochs')
 parser.add_argument('--epoch_enforced_training', type=int, default=20, help='Enforced epochs')
-parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
 parser.add_argument('--seed', type=int, default=42, help='Random seed')
 parser.add_argument('--mask', action='store_true', help='Mask diagonal')
 parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
@@ -49,6 +48,7 @@ parser.add_argument('--anti_diag_flip', action='store_true', help='[新增] 50% 
 parser.add_argument('--h_flip', action='store_true', help='[新增] 50% 機率執行水平翻轉 (Horizontal Flip)')
 parser.add_argument('--optimizer', type=str, default='adagrad', choices=['adagrad', 'adamw'], help='Optimizer choice: adagrad or adamw')
 parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension')
+parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
 parser.add_argument("--data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -184,7 +184,7 @@ try:
             loss = loss / accumulation_steps
             loss.backward()
             
-            # 3. 累積更新
+            # 3. 累積更新 
             if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
                 grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
                 e_norms.append(grad_norm.item()) 
