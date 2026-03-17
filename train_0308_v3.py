@@ -54,6 +54,15 @@ parser.add_argument("--data_inputs", nargs='+', help="Keys for training and vali
 args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
 
+# ---------------------------------------------------------
+# 列印指令參數至 Log
+# ---------------------------------------------------------
+print("-" * 50)
+print("Command Line Arguments")  
+for key, value in vars(args).items():
+    print(f"  {key}: {value}")
+print("-" * 50)
+
 # device setting
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(args.seed)
