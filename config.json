@@ -1,0 +1,66 @@
+{
+    "liver": {
+        "reference": "mm9",
+        "training": [
+            "/work/u1696810/liver_data/TAM_R1.mlhic",
+            "/work/u1696810/liver_data/TAM_R2.mlhic",
+            "/work/u1696810/liver_data/NIPBL_R1.mlhic",
+            "/work/u1696810/liver_data/NIPBL_R2.mlhic"
+        ],
+        "validation": [
+            "/work/u1696810/liver_data/TAM_validation_R1.mlhic",
+            "/work/u1696810/liver_data/TAM_validation_R2.mlhic",
+            "/work/u1696810/liver_data/NIPBL_validation_R1.mlhic",
+            "/work/u1696810/liver_data/NIPBL_validation_R2.mlhic"
+        ],
+        "test": [
+            "/work/u1696810/liver_data/TAM_test_R1.mlhic",
+            "/work/u1696810/liver_data/TAM_test_R2.mlhic",
+            "/work/u1696810/liver_data/NIPBL_test_R1.mlhic",
+            "/work/u1696810/liver_data/NIPBL_test_R2.mlhic"
+        ]
+    },
+
+    "NPC": {
+        "reference": "mm9",
+        "training": [
+            "/work/u1696810/NPC_data/d4auxrep1_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4auxrep2_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4ctlrep1_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4ctlrep2_10kb.mlhic"
+        ],
+        "validation": [
+            "/work/u1696810/NPC_data/d4_validation_auxrep1_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4_validation_auxrep2_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4_validation_ctlrep1_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4_validation_ctlrep2_10kb.mlhic"
+        ],
+        "test": [
+            "/work/u1696810/NPC_data/d4_test_auxrep1_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4_test_auxrep2_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4_test_ctlrep1_10kb.mlhic",
+            "/work/u1696810/NPC_data/d4_test_ctlrep2_10kb.mlhic"
+        ]
+    },
+    "TCell": {
+        "reference": "mm10",
+        "training": [
+            "/work/u1696810/tcell_data/CD69negDPWTR1.mlhic",
+            "/work/u1696810/tcell_data/CD69negDPWTR2.mlhic",
+            "/work/u1696810/tcell_data/CD69posCD4SPWTR1.mlhic",
+            "/work/u1696810/tcell_data/CD69posCD4SPWTR2.mlhic"
+        ],
+        "validation": [
+            "/work/u1696810/tcell_data/CD69negDPWTR1_validation.mlhic",
+            "/work/u1696810/tcell_data/CD69negDPWTR2_validation.mlhic",
+            "/work/u1696810/tcell_data/CD69posCD4SPWTR1_validation.mlhic",
+            "/work/u1696810/tcell_data/CD69posCD4SPWTR2_validation.mlhic"
+        ],
+        "test": [
+            "/work/u1696810/tcell_data/CD69negDPWTR1_test.mlhic",
+            "/work/u1696810/tcell_data/CD69negDPWTR2_test.mlhic",
+            "/work/u1696810/tcell_data/CD69posCD4SPWTR1_test.mlhic",
+            "/work/u1696810/tcell_data/CD69posCD4SPWTR2_test.mlhic"
+        ]
+    }
+}
