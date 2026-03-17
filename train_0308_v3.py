@@ -25,7 +25,7 @@ from HiSiNet.reference_dictionaries import reference_genomes
 parser = argparse.ArgumentParser(description='Triplet network (v1 logic with fixed naming)')
 parser.add_argument('model_name', type=str, help='Model from models.py')
 parser.add_argument('json_file', type=str, help='JSON dictionary with file paths')
-parser.add_argument('learning_rate', type=float, help='Learning rate')
+parser.add_argument('--learning_rate', type=float, help='Learning rate')
 parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
 parser.add_argument('--epoch_training', type=int, default=100, help='Max epochs')
 parser.add_argument('--epoch_enforced_training', type=int, default=20, help='Enforced epochs')
