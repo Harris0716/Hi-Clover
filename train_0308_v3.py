@@ -48,6 +48,7 @@ parser.add_argument('--jitter_contrast', type=float, default=0.0, help='ColorJit
 parser.add_argument('--anti_diag_flip', action='store_true', help='[新增] 50% 機率執行沿次對角線 (y=-x) 翻轉')
 parser.add_argument('--h_flip', action='store_true', help='[新增] 50% 機率執行水平翻轉 (Horizontal Flip)')
 parser.add_argument('--optimizer', type=str, default='adagrad', choices=['adagrad', 'adamw'], help='Optimizer choice: adagrad or adamw')
+parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension')
 parser.add_argument("data_inputs", nargs='+', help="Keys for training and validation")
 
 args = parser.parse_args()
@@ -90,7 +91,7 @@ val_loader = DataLoader(val_dataset, batch_size=100, sampler=SequentialSampler(v
 # ---------------------------------------------------------
 # Model & Optimizer
 # ---------------------------------------------------------
-model = eval("models." + args.model_name)(mask=args.mask).to(device)
+model = eval("models." + args.model_name)(mask=args.mask, embedding_dim=args.embedding_dim).to(device)
 if torch.cuda.device_count() > 1: model = nn.DataParallel(model)
 
 criterion = TripletLoss(margin=args.margin)
