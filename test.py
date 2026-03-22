@@ -28,6 +28,7 @@ parser.add_argument('--mask', type=bool, default=True)
 parser.add_argument('--threshold_data', type=str, default='train_val', choices=['val', 'train_val'],
                     help='Data used to calibrate decision threshold (intersect). train_val=train+val (default, stabler); val=validation only.')    
 parser.add_argument("data_inputs", nargs='+')
+parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension')
 args = parser.parse_args()
 
 def test_triplet(model, dataloader, device):
@@ -59,7 +60,7 @@ def calculate_metrics(distances, labels, fixed_threshold=None):
 # Setup
 # ---------------------------------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = eval("models." + args.model_name)(mask=args.mask).to(device)
+model = eval("models." + args.model_name)(mask=args.mask, embedding_dim=args.embedding_dim).to(device)
 sd = torch.load(args.model_infile, map_location=device, weights_only=True)
 model.load_state_dict(OrderedDict([(k.replace("module.", ""), v) for k, v in sd.items()]))
 
@@ -176,7 +177,6 @@ for subset in ["train_val", "test"]:
     
     plt.xlabel("Euclidean Distance"); plt.ylabel("Probability Density"); plt.legend()
     plt.savefig(os.path.join(m_dir, f"{m_base}_{subset}_dist_hist.pdf"), bbox_inches='tight'); plt.close()
-    # [新增] 將該資料集、該階段的原始距離數據存檔，供後續矩陣繪圖使用
     np.savez_compressed(
         os.path.join(m_dir, f"{cell_name}_{subset}_raw_dist.npz"),
         dist=dist,
