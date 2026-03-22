@@ -23,12 +23,12 @@ parser = argparse.ArgumentParser(description='Latent Space Evaluation and Visual
 parser.add_argument('model_name', type=str)
 parser.add_argument('json_file', type=str)
 parser.add_argument('model_infile', type=str)
-parser.add_argument('--mask', type=bool, default=True)
+parser.add_argument('--mask', action='store_true', help='Mask diagonal')
 # threshold_data: "train_val" = use train+val for threshold (default, stabler); "val" = validation only
 parser.add_argument('--threshold_data', type=str, default='train_val', choices=['val', 'train_val'],
                     help='Data used to calibrate decision threshold (intersect). train_val=train+val (default, stabler); val=validation only.')    
 parser.add_argument("data_inputs", nargs='+')
-parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension')
+parser.add_argument('--embedding_dim', type=int, default=512, help='Embedding dimension')
 args = parser.parse_args()
 
 def test_triplet(model, dataloader, device):
