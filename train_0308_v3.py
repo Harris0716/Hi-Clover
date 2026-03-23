@@ -44,8 +44,8 @@ parser.add_argument('--num_workers', type=int, default=4, help='DataLoader worke
 parser.add_argument('--semi_hard', action='store_true', help='Use Semi-Hard Negative Mining (dist_ap < dist_an < dist_ap + margin)')
 parser.add_argument('--jitter_brightness', type=float, default=0.0, help='ColorJitter brightness (0=off, e.g. 0.2 for augmentation)')
 parser.add_argument('--jitter_contrast', type=float, default=0.0, help='ColorJitter contrast (0=off, e.g. 0.2 for augmentation)')
-parser.add_argument('--anti_diag_flip', action='store_true', help='[新增] 50% 機率執行沿次對角線 (y=-x) 翻轉')
-parser.add_argument('--h_flip', action='store_true', help='[新增] 50% 機率執行水平翻轉 (Horizontal Flip)')
+parser.add_argument('--anti_diag_flip', action='store_true', help='Anti-Diagonal Flip')
+parser.add_argument('--h_flip', action='store_true', help='Horizontal Flip') 
 parser.add_argument('--optimizer', type=str, default='adagrad', choices=['adagrad', 'adamw'], help='Optimizer choice: adagrad or adamw')
 parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension')
 parser.add_argument('--outpath', type=str, default="outputs/", help='Output directory')
@@ -113,7 +113,7 @@ scheduler = None
 if args.scheduler == 'plateau':
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor, patience=args.lr_patience, min_lr=args.min_lr)
 
-# [修改] Jitter 加上 RandomApply 以 50% 機率觸發
+# [Modified] Jitter wrapped with RandomApply with 50% trigger probability
 use_jitter = args.jitter_brightness > 0 or args.jitter_contrast > 0
 if use_jitter:
     base_jitter = T.ColorJitter(brightness=args.jitter_brightness or 0.0, contrast=args.jitter_contrast or 0.0)
@@ -147,16 +147,16 @@ try:
         for i, data in enumerate(train_loader):
             a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
             
-            # [新增] 50% 機率沿次對角線 (y = -x) 同步翻轉 Triplet
+            # [New] 50% chance to synchronously flip the triplet along the anti-diagonal (y = -x)
             if args.anti_diag_flip:
                 flip_mask = torch.rand(a.size(0), device=device) > 0.5
                 if flip_mask.any():
-                    # 矩陣沿 y=-x 翻轉：等同於轉置 (transpose) 後再將高與寬反轉 (flip)
+                    # Flip matrix along y = -x: equivalent to transpose then flip height and width
                     a[flip_mask] = a[flip_mask].transpose(-2, -1).flip(-2, -1)
                     p[flip_mask] = p[flip_mask].transpose(-2, -1).flip(-2, -1)
                     n[flip_mask] = n[flip_mask].transpose(-2, -1).flip(-2, -1)
 
-            # [新增] 50% 機率執行隨機水平翻轉 (Horizontal Flip)
+            # [New] 50% chance to apply random horizontal flip
             if args.h_flip:
                 h_flip_mask = torch.rand(a.size(0), device=device) > 0.5
                 if h_flip_mask.any():
@@ -170,20 +170,20 @@ try:
             # 1. Forward pass
             a_out, p_out, n_out = model(a, p, n)
             
-            # [新增] Semi-Hard Mining 邏輯
+            # [New] Semi-Hard Mining logic
             if args.semi_hard:
                 with torch.no_grad():
-                    # 計算歐氏距離
+                    # Compute Euclidean distances
                     d_ap_batch = F.pairwise_distance(a_out, p_out)
                     d_an_batch = F.pairwise_distance(a_out, n_out)
-                    # 篩選條件：d(a,p) < d(a,n) < d(a,p) + margin
+                    # Selection condition: d(a,p) < d(a,n) < d(a,p) + margin
                     mask = (d_an_batch > d_ap_batch) & (d_an_batch < d_ap_batch + args.margin)
                 
-                # 如果該 batch 有符合條件的樣本，則只對這些樣本計算 Loss
+                # If there are samples satisfying the condition in this batch, compute loss only on them
                 if mask.any():
                     loss = criterion(a_out[mask], p_out[mask], n_out[mask])
                 else:
-                    # 如果沒有符合條件的，損失設為 0 (保持梯度累積結構)
+                    # If none satisfy the condition, set loss to 0 (keep gradient accumulation structure)
                     loss = torch.tensor(0.0, device=device, requires_grad=True)
             else:
                 # 原始全量計算
@@ -203,7 +203,7 @@ try:
             running_loss += loss.item() * accumulation_steps
 
             if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
-                # 監控時顯示當前樣本的距離情況
+                # During monitoring, show current sample distance statistics
                 d_ap = F.pairwise_distance(a_out, p_out).mean().item()
                 d_an = F.pairwise_distance(a_out, n_out).mean().item()
                 print(f"Epoch [{epoch+1}/{args.epoch_training}], Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}, d(a,p): {d_ap:.4f}, d(a,n): {d_an:.4f}")
@@ -266,7 +266,7 @@ def save_fig(fig, suffix):
     fig.savefig(base_save_path + suffix, dpi=300)
     plt.close(fig)
 
-# 彙整詳細參數資訊用於圖表標題
+# Aggregate detailed parameter information for figure titles  
 aug_features = []
 if args.anti_diag_flip: aug_features.append("AntiDiag")
 if args.h_flip: aug_features.append("HFlip")
