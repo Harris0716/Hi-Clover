@@ -90,12 +90,12 @@ class TripletLeNetBatchNorm(TripletNet):
             nn.GELU(),
             nn.MaxPool2d(2, stride=2),
             
-            # 將 (1, 1) 改為 (4, 4) 以保留空間結構資訊
-            nn.AdaptiveAvgPool2d((4, 4)) 
+            # Changed from (1, 1) to (4, 4) to preserve spatial structure information
+            nn.AdaptiveAvgPool2d((4, 4))
         )
-        
+
         self.linear = nn.Sequential(
-            # 輸入維度調整為: 64 個通道 * 4 * 4 的空間特徵 = 1024
+            # Input dimension: 64 channels * 4 * 4 spatial features = 1024
             nn.Linear(1024, 256),
             nn.BatchNorm1d(256),
             nn.GELU(),
@@ -172,39 +172,39 @@ class TripletLeNetBatchNormImproved(TripletNet):
         super(TripletLeNetBatchNormImproved, self).__init__(mask=mask)
         
         self.features = nn.Sequential(
-            # Block 1: 輸入 256x256 -> 輸出 128x128
+            # Block 1: input 256x256 -> output 128x128
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            # Block 2: 輸入 128x128 -> 輸出 64x64
+
+            # Block 2: input 128x128 -> output 64x64
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            # Block 3: 輸入 64x64 -> 輸出 32x32
+
+            # Block 3: input 64x64 -> output 32x32
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
 
-            # Block 4: 輸入 32x32 -> 輸出 16x16
+            # Block 4: input 32x32 -> output 16x16
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=2, stride=2)
-            # 移除原先的 nn.AdaptiveAvgPool2d((4, 4))
+            # Removed the original nn.AdaptiveAvgPool2d((4, 4))
         )
-        
+
         self.linear = nn.Sequential(
-            # 經全局平均池化後，空間維度降為 1x1，輸入維度對齊通道數 256
+            # After global average pooling, spatial dims reduced to 1x1; input dim matches channel count 256
             nn.Linear(256, 512),
             nn.BatchNorm1d(512),
             nn.GELU(),
             nn.Dropout(p=0.5),
-            # 最終輸出維持 128 維度以供 Triplet Loss 計算
+            # Final output kept at 128 dims for Triplet Loss computation
             nn.Linear(512, 128)
         )
         
@@ -213,7 +213,7 @@ class TripletLeNetBatchNormImproved(TripletNet):
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
-                # 將 Xavier 替換為 Kaiming 初始化，非線性設定為 relu 以近似 GELU 的特性
+                # Replace Xavier with Kaiming initialization; nonlinearity set to relu to approximate GELU behavior
                 nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
@@ -222,10 +222,10 @@ class TripletLeNetBatchNormImproved(TripletNet):
         x = self.mask_data(x)
         x = self.features(x)
         
-        # 引入全局平均池化 (GAP)，將 [Batch, 256, 16, 16] 壓縮為 [Batch, 256, 1, 1]
+        # Apply Global Average Pooling (GAP) to reduce [Batch, 256, 16, 16] to [Batch, 256, 1, 1]
         x = F.adaptive_avg_pool2d(x, (1, 1))
-        
-        # 展平為 [Batch, 256]
+
+        # Flatten to [Batch, 256]
         x = x.view(x.size(0), -1)
         
         x = self.linear(x)
