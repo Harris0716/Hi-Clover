@@ -141,6 +141,9 @@ try:
         epoch_start = time.time()
         model.train()
         running_loss, e_norms = 0.0, []
+        semi_hard_count = 0
+        total_sample_count = 0
+        fallback_count = 0
         
         optimizer.zero_grad()
         
@@ -178,11 +181,11 @@ try:
                     d_an_batch = F.pairwise_distance(a_out, n_out)
                     # Selection condition: d(a,p) < d(a,n) < d(a,p) + margin
                     # mask is used to flitter those triplets that satisfy the condition 
-                    mask = (d_an_batch > d_ap_batch) & (d_an_batch < d_ap_batch + args.margin)
+                    sh_mask = (d_an_batch > d_ap_batch) & (d_an_batch < d_ap_batch + args.margin)
                 
                 # If there are samples satisfying the condition in this batch, compute loss only on them
-                if mask.any():
-                    loss = criterion(a_out[mask], p_out[mask], n_out[mask])
+                if sh_mask.any():
+                    loss = criterion(a_out[sh_mask], p_out[sh_mask], n_out[sh_mask])
                 else:
                     # fallback: use full batch when no semi-hard samples found
                     loss = criterion(a_out, p_out, n_out)
@@ -239,7 +242,9 @@ try:
 
         lr_str = f", LR: {lr_before:.2e}" if scheduler else ""
         print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s{lr_str}")
-
+        if args.semi_hard:
+            sh_ratio = semi_hard_count / max(total_sample_count, 1)
+            print(f"  Semi-hard ratio: {sh_ratio:.4f} ({semi_hard_count}/{total_sample_count}), Fallback batches: {fallback_count}")
         if avg_v < best_val_loss:
             best_val_loss = avg_v
             patience_counter = 0
