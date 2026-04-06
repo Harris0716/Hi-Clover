@@ -55,7 +55,7 @@ args = parser.parse_args()
 os.makedirs(args.outpath, exist_ok=True)
 
 # ---------------------------------------------------------
-# 列印指令參數至 Log
+# Print command-line arguments to log
 # ---------------------------------------------------------
 print("-" * 50)
 print("Command Line Arguments")  
@@ -177,23 +177,24 @@ try:
                     d_ap_batch = F.pairwise_distance(a_out, p_out)
                     d_an_batch = F.pairwise_distance(a_out, n_out)
                     # Selection condition: d(a,p) < d(a,n) < d(a,p) + margin
+                    # mask is used to flitter those triplets that satisfy the condition 
                     mask = (d_an_batch > d_ap_batch) & (d_an_batch < d_ap_batch + args.margin)
                 
                 # If there are samples satisfying the condition in this batch, compute loss only on them
                 if mask.any():
                     loss = criterion(a_out[mask], p_out[mask], n_out[mask])
                 else:
-                    # If none satisfy the condition, set loss to 0 (keep gradient accumulation structure)
-                    loss = torch.tensor(0.0, device=device, requires_grad=True)
+                    # fallback: use full batch when no semi-hard samples found
+                    loss = criterion(a_out, p_out, n_out)
             else:
-                # 原始全量計算
+                # Full-batch loss
                 loss = criterion(a_out, p_out, n_out)
             
-            # 2. 正規化與反向傳播
+            # 2. Normalize and backpropagate
             loss = loss / accumulation_steps
             loss.backward()
             
-            # 3. 累積更新 
+            # 3. Accumulated gradient update
             if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
                 grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
                 e_norms.append(grad_norm.item()) 
