@@ -184,14 +184,13 @@ try:
                     sh_mask = (d_an_batch > d_ap_batch) & (d_an_batch < d_ap_batch + args.margin)
                 
                 # If there are samples satisfying the condition in this batch, compute loss only on them
+                total_sample_count += a.size(0)
                 if sh_mask.any():
+                    semi_hard_count += sh_mask.sum().item()
                     loss = criterion(a_out[sh_mask], p_out[sh_mask], n_out[sh_mask])
                 else:
-                    # fallback: use full batch when no semi-hard samples found
+                    fallback_count += 1
                     loss = criterion(a_out, p_out, n_out)
-            else:
-                # Full-batch loss
-                loss = criterion(a_out, p_out, n_out)
             
             # 2. Normalize and backpropagate
             loss = loss / accumulation_steps
