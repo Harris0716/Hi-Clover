@@ -90,15 +90,7 @@ elif "TCELL" in cell_name.upper():
 else:
     lgd = [f"{cell_name} R1", f"{cell_name} R2", "Treat R1", "Treat R2"]
 
-# --- [improve] parse the file name parameters, make the title better readable ---
-# assume the file name format: Model_LR_Batch_Seed_Margin...
-parts = m_base.replace('_best', '').split('_')
-if len(parts) >= 5:
-    # try to automatically parse common formats
-    param_info = f"Model: {parts[0]} | LR: {parts[1]} | Batch: {parts[2]} | Seed: {parts[3]} | Margin: {parts[4]}"
-else:
-    # if the format does not match, use the default display
-    param_info = m_base.replace('_best', '').replace('_', ' | ')
+param_info = f"Model: {args.model_name} | Embed: {args.embedding_dim} | Mask: {args.mask}"
 # ---------------------------------------
 
 # Step 1: Calibrate threshold (intersect) from chosen data — val only vs train+val
