@@ -74,7 +74,8 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # parameters
 # ---------------------------------------------------------
-file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+# file_param_info = f"{args.model_name}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+file_param_info = f"{args.model_name}_{args.optimizer}_{args.scheduler}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
 base_save_path = os.path.join(args.outpath, file_param_info)
 
 # ---------------------------------------------------------
