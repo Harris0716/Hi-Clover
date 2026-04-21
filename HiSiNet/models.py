@@ -53,7 +53,7 @@ class TripletLeNet(TripletNet):
         self.linear = nn.Sequential(
             nn.Linear(64, 256),
             nn.GELU(),
-            nn.Dropout(p=0.4),
+            nn.Dropout(p=0.5),
             nn.Linear(256, 128)
         )
         
@@ -259,7 +259,7 @@ class TripletLeNetLayerNorm(TripletNet):
             nn.Linear(64, 256),
             nn.LayerNorm(256),
             nn.GELU(),
-            nn.Dropout(p=0.4),
+            nn.Dropout(p=0.5),
             nn.Linear(256, 128),
         )
 
@@ -317,7 +317,7 @@ class TripletLeNetV2(TripletNet):
             nn.Linear(128, 256),
             nn.BatchNorm1d(256),
             nn.GELU(),
-            nn.Dropout(p=0.4),
+            nn.Dropout(p=0.5),
             nn.Linear(256, 128),
         )
 
@@ -349,9 +349,9 @@ class TripletResNet(nn.Module):
 
         # load ResNet backbone
         if backbone == "resnet18":
-            base_model = models.resnet18(pretrained=False)
+            base_model = models.resnet18(weights=None)
         elif backbone == "resnet34":
-            base_model = models.resnet34(pretrained=False)
+            base_model = models.resnet34(weights=None)
         else:
             raise ValueError(f"Backbone {backbone} not supported")
 
