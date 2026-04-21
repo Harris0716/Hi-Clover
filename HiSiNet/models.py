@@ -119,6 +119,68 @@ class TripletLeNetBatchNorm(TripletNet):
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
+class SEBlock(nn.Module):
+    def __init__(self, channels, reduction=4):
+        super(SEBlock, self).__init__()
+        self.squeeze = nn.AdaptiveAvgPool2d(1)
+        self.excitation = nn.Sequential(
+            nn.Linear(channels, channels // reduction),
+            nn.ReLU(),
+            nn.Linear(channels // reduction, channels),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        w = self.squeeze(x).view(b, c)
+        w = self.excitation(w).view(b, c, 1, 1)
+        return x * w
+
+class TripletLeNetBatchNormSE(TripletNet):
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletLeNetBatchNormSE, self).__init__(mask=mask)
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=5, stride=1),
+            nn.BatchNorm2d(32),
+            nn.GELU(),
+            SEBlock(32, reduction=4),
+            nn.MaxPool2d(2, stride=2),
+
+            nn.Conv2d(32, 64, kernel_size=5, stride=1),
+            nn.BatchNorm2d(64),
+            nn.GELU(),
+            SEBlock(64, reduction=4),
+            nn.MaxPool2d(2, stride=2),
+
+            nn.AdaptiveAvgPool2d((4, 4))
+        )
+
+        self.linear = nn.Sequential(
+            nn.Linear(1024, 256),
+            nn.BatchNorm1d(256),
+            nn.GELU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(256, embedding_dim)
+        )
+
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward_one(self, x):
+        x = self.mask_data(x)
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        return F.normalize(x, p=2, dim=1)
+
+
 # class TripletLeNetBatchNorm(TripletNet):
 #     '''with batch norm'''
 #     def __init__(self, mask=False):
