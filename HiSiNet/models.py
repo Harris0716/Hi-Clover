@@ -391,6 +391,44 @@ class TripletResNet(nn.Module):
         return anchor_out, positive_out, negative_out
 
 
+class TripletEfficientNet(nn.Module):
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletEfficientNet, self).__init__()
+
+        if mask:
+            mask_arr = np.tril(np.ones(256), k=-3) + np.triu(np.ones(256), k=3)
+            self.mask = nn.Parameter(torch.from_numpy(np.array(mask_arr)).to(torch.int32), requires_grad=False)
+
+        from torchvision.models import efficientnet_b0
+        base_model = efficientnet_b0(weights=None)
+
+        # modify first conv to accept 1-channel input
+        base_model.features[0][0] = nn.Conv2d(
+            1, 32, kernel_size=3, stride=2, padding=1, bias=False
+        )
+
+        self.feature_extractor = base_model.features
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.embedding_layer = nn.Linear(1280, embedding_dim)
+
+    def mask_data(self, x):
+        if hasattr(self, "mask"):
+            x = torch.mul(self.mask, x)
+        return x
+
+    def forward_one(self, x):
+        x = self.feature_extractor(x)
+        x = self.pool(x)
+        x = torch.flatten(x, 1)
+        x = self.embedding_layer(x)
+        x = nn.functional.normalize(x, p=2, dim=1)
+        return x
+
+    def forward(self, anchor, positive, negative):
+        anchor = self.mask_data(anchor)
+        positive = self.mask_data(positive)
+        negative = self.mask_data(negative)
+        return self.forward_one(anchor), self.forward_one(positive), self.forward_one(negative)
 
 
 # ------below keep the same as the original code-----
