@@ -180,6 +180,20 @@ class TripletLeNetBatchNormSE(TripletNet):
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
 
+class TripletLeNetBatchNormSE_Joint(TripletLeNetBatchNormSE):
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletLeNetBatchNormSE_Joint, self).__init__(mask=mask, embedding_dim=embedding_dim)
+        # 新增一個二元分類頭，輸入為兩個 Embedding 的絕對差值
+        self.pair_classifier = nn.Sequential(
+            nn.Linear(embedding_dim, 64),
+            nn.GELU(),
+            nn.Linear(64, 1) # 輸出 1 維數值，搭配 BCEWithLogitsLoss
+        )
+
+    def forward_pair_classify(self, emb1, emb2):
+        # 計算兩個 embedding 的絕對差值特徵
+        diff_feat = torch.abs(emb1 - emb2)
+        return self.pair_classifier(diff_feat)
 
 # class TripletLeNetBatchNorm(TripletNet):
 #     '''with batch norm'''
