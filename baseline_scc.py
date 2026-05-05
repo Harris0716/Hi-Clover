@@ -22,7 +22,7 @@ with open(args.json_file) as json_file:
 # ===== HiRep SCC wrapper =====
 # ===== 修正後的 HiRep SCC wrapper =====
 # 修改 baseline_scc.py 中的這部分
-def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=2000000):
+def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=500000):
     from scipy.ndimage import gaussian_filter
     from scipy.stats import pearsonr
 
