@@ -23,27 +23,24 @@ with open(args.json_file) as json_file:
 # ===== 修正後的 HiRep SCC wrapper =====
 # 修改 baseline_scc.py 中的這部分
 def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=2000000):
-    """
-    純 Numpy 實作 SCC，增加維度檢查。
-    """
     from scipy.ndimage import gaussian_filter
     from scipy.stats import pearsonr
 
-    # 強制轉為 2D (排除 batch 或 channel 維度)
+    # 強制擠壓多餘維度（如 Batch 或 Channel），確保為 2D
     mat1 = np.squeeze(mat1)
     mat2 = np.squeeze(mat2)
     
     if mat1.ndim != 2:
         return 0.0
 
-    # 1. 平滑化處理 (Smoothing)
+    # 1. 平滑化 (Smoothing)
     if h > 0:
         mat1_s = gaussian_filter(mat1, sigma=h)
         mat2_s = gaussian_filter(mat2, sigma=h)
     else:
         mat1_s, mat2_s = mat1, mat2
 
-    # 2. 依照距離 (Strata) 計算相關係數
+    # 2. 依照距離 (Strata) 分層計算相關係數[cite: 2]
     max_bin = int(dBPMax / bin_size)
     side = mat1_s.shape[0]
     corrs = []
@@ -53,7 +50,7 @@ def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=2000000):
         v1 = np.diag(mat1_s, k)
         v2 = np.diag(mat2_s, k)
         
-        # 過濾掉變異數為 0 的層級，避免 pearsonr 報錯
+        # 排除變異數為 0 的層級以避免 Pearson 計算無效
         if np.std(v1) == 0 or np.std(v2) == 0:
             continue
             
@@ -62,7 +59,7 @@ def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=2000000):
             continue
             
         corrs.append(r)
-        # 權重計算：層級長度 * 標準差乘積
+        # 使用層級長度與標準差之乘積作為權重[cite: 2]
         weight = len(v1) * np.std(v1) * np.std(v2)
         weights.append(weight)
 
