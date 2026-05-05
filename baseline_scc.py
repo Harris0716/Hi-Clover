@@ -24,12 +24,19 @@ with open(args.json_file) as json_file:
 # 修改 baseline_scc.py 中的這部分
 def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=2000000):
     """
-    純 Numpy 實作的簡化版 SCC，用於處理子圖 patches。
+    純 Numpy 實作 SCC，增加維度檢查。
     """
     from scipy.ndimage import gaussian_filter
     from scipy.stats import pearsonr
 
-    # 1. 平滑化處理 (Smoothing) - 對應 hicrep 的 h 參數
+    # 強制轉為 2D (排除 batch 或 channel 維度)
+    mat1 = np.squeeze(mat1)
+    mat2 = np.squeeze(mat2)
+    
+    if mat1.ndim != 2:
+        return 0.0
+
+    # 1. 平滑化處理 (Smoothing)
     if h > 0:
         mat1_s = gaussian_filter(mat1, sigma=h)
         mat2_s = gaussian_filter(mat2, sigma=h)
@@ -38,36 +45,32 @@ def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=2000000):
 
     # 2. 依照距離 (Strata) 計算相關係數
     max_bin = int(dBPMax / bin_size)
-    side = mat1.shape[0]
+    side = mat1_s.shape[0]
     corrs = []
     weights = []
 
     for k in range(min(max_bin, side)):
-        # 取得距離對角線為 k 的所有元素
         v1 = np.diag(mat1_s, k)
         v2 = np.diag(mat2_s, k)
         
-        # 移除全為 0 的區域以避免計算錯誤
-        mask = (v1 > 0) | (v2 > 0)
-        if np.sum(mask) < 2:
+        # 過濾掉變異數為 0 的層級，避免 pearsonr 報錯
+        if np.std(v1) == 0 or np.std(v2) == 0:
             continue
             
-        # 計算該層的相關係數
-        r, _ = pearsonr(v1[mask], v2[mask])
+        r, _ = pearsonr(v1, v2)
         if np.isnan(r):
             continue
             
         corrs.append(r)
-        # 使用該層的變異量乘上樣本數作為權重 (hicrep 標準做法)
-        weight = len(v1[mask]) * np.std(v1[mask]) * np.std(v2[mask])
+        # 權重計算：層級長度 * 標準差乘積
+        weight = len(v1) * np.std(v1) * np.std(v2)
         weights.append(weight)
 
-    # 3. 加權平均得到 SCC
+    # 3. 加權平均
     if not weights or np.sum(weights) == 0:
         return 0.0
         
     return np.average(corrs, weights=weights)
-
 
 # ===== Testing function =====
 def test_triplet_by_siamese(dataloader):
