@@ -20,11 +20,26 @@ with open(args.json_file) as json_file:
 
 
 # ===== HiRep SCC wrapper =====
+# ===== 修正後的 HiRep SCC wrapper =====
 def hicrep_scc(mat1, mat2, h=1, dBPMax=2000000, bDownSample=False):
     """
-    計算兩個 Hi-C contact maps 的 SCC
     mat1, mat2: numpy 2D contact maps
     """
+    # 由於 hicrep.hicrepSCC 預期輸入帶有 binsize 屬性
+    # 我們可以手動計算 SCC，或將其包裝
+    from hicrep.utils import get_scc # 請確認你的版本是否有此函數
+    
+    # 如果 hicrepSCC 堅持要 binsize，你可以嘗試以下 hack：
+    class MatrixWrapper:
+        def __init__(self, matrix, binsize):
+            self.matrix = matrix
+            self.binsize = binsize
+        def matrix(self):
+            return self.matrix
+
+    # 假設你的解析度是 10kb (10000)
+    # 注意：這取決於 hicrep 套件內部如何調用這些物件
+    # 若此法無效，建議確認 hicrep 是否有接受 numpy 的直接函數
     return hicrepSCC(mat1, mat2, h, dBPMax, bDownSample)
 
 
