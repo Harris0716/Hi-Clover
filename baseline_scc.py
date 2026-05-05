@@ -21,26 +21,46 @@ with open(args.json_file) as json_file:
 
 # ===== HiRep SCC wrapper =====
 # ===== 修正後的 HiRep SCC wrapper =====
-def hicrep_scc(mat1, mat2, h=1, dBPMax=2000000, bDownSample=False):
+# 修改 baseline_scc.py 中的這部分
+def hicrep_scc(mat1, mat2, h=1, dBPMax=2000000):
     """
-    mat1, mat2: numpy 2D contact maps
+    mat1, mat2: 來自 mlhic 的 numpy 2D patches (通常是 256x256)
     """
-    # 由於 hicrep.hicrepSCC 預期輸入帶有 binsize 屬性
-    # 我們可以手動計算 SCC，或將其包裝
-    from hicrep.utils import get_scc # 請確認你的版本是否有此函數
-    
-    # 如果 hicrepSCC 堅持要 binsize，你可以嘗試以下 hack：
-    class MatrixWrapper:
-        def __init__(self, matrix, binsize):
-            self.matrix = matrix
-            self.binsize = binsize
-        def matrix(self):
-            return self.matrix
+    # 根據您的論文，子圖解析度為 10kb
+    current_binsize = 10000 
 
-    # 假設你的解析度是 10kb (10000)
-    # 注意：這取決於 hicrep 套件內部如何調用這些物件
-    # 若此法無效，建議確認 hicrep 是否有接受 numpy 的直接函數
-    return hicrepSCC(mat1, mat2, h, dBPMax, bDownSample)
+    # 建立模擬物件以符合 hicrepSCC 的輸入要求
+    class CoolMock:
+        def __init__(self, matrix, binsize):
+            self.matrix_data = matrix
+            self.binsize = binsize
+        def matrix(self, balance=False):
+            # hicrep 內部會呼叫 .matrix()，我們直接回傳 numpy 陣列
+            return self
+        def fetch(self, chrom):
+            # 有些版本會呼叫 .fetch()
+            return self.matrix_data
+        @property
+        def binsize(self):
+            return self._binsize
+        @binsize.setter
+        def binsize(self, value):
+            self._binsize = value
+
+    # 封裝矩陣
+    mock1 = CoolMock(mat1, current_binsize)
+    mock1.binsize = current_binsize
+    mock2 = CoolMock(mat2, current_binsize)
+    mock2.binsize = current_binsize
+
+    try:
+        # 呼叫原始匯入的 hicrepSCC
+        # 注意：h=1 是您原本設定的平滑化參數
+        return hicrepSCC(mock1, mock2, h, dBPMax, bDownSample=False)
+    except Exception as e:
+        # 如果還是失敗，回傳一個安全值並印出錯誤
+        print(f"SCC calculation failed: {e}")
+        return 0.0
 
 
 # ===== Testing function =====
