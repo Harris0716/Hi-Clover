@@ -22,79 +22,72 @@ with open(args.json_file) as json_file:
 # ===== HiRep SCC wrapper =====
 # ===== 修正後的 HiRep SCC wrapper =====
 # 修改 baseline_scc.py 中的這部分
+import numpy as np
+import torch
+from tqdm import tqdm  # 加入進度條
+import logging
+
+# 設定 Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=500000):
+    """
+    優化後的 Numpy SCC 實作，加入維度擠壓
+    """
     from scipy.ndimage import gaussian_filter
     from scipy.stats import pearsonr
 
-    # 強制擠壓多餘維度（如 Batch 或 Channel），確保為 2D
     mat1 = np.squeeze(mat1)
     mat2 = np.squeeze(mat2)
     
-    if mat1.ndim != 2:
+    if mat1.ndim != 2 or np.std(mat1) < 1e-6 or np.std(mat2) < 1e-6:
         return 0.0
 
-    # 1. 平滑化 (Smoothing)
-    if h > 0:
-        mat1_s = gaussian_filter(mat1, sigma=h)
-        mat2_s = gaussian_filter(mat2, sigma=h)
-    else:
-        mat1_s, mat2_s = mat1, mat2
+    # 平滑化
+    mat1_s = gaussian_filter(mat1, sigma=h) if h > 0 else mat1
+    mat2_s = gaussian_filter(mat2, sigma=h) if h > 0 else mat2
 
-    # 2. 依照距離 (Strata) 分層計算相關係數[cite: 2]
     max_bin = int(dBPMax / bin_size)
     side = mat1_s.shape[0]
-    corrs = []
-    weights = []
+    corrs, weights = [], []
 
     for k in range(min(max_bin, side)):
-        v1 = np.diag(mat1_s, k)
-        v2 = np.diag(mat2_s, k)
-        
-        # 排除變異數為 0 的層級以避免 Pearson 計算無效
-        if np.std(v1) == 0 or np.std(v2) == 0:
+        v1, v2 = np.diag(mat1_s, k), np.diag(mat2_s, k)
+        std1, std2 = np.std(v1), np.std(v2)
+        if std1 < 1e-6 or std2 < 1e-6:
             continue
             
         r, _ = pearsonr(v1, v2)
-        if np.isnan(r):
-            continue
-            
-        corrs.append(r)
-        # 使用層級長度與標準差之乘積作為權重[cite: 2]
-        weight = len(v1) * np.std(v1) * np.std(v2)
-        weights.append(weight)
+        if not np.isnan(r):
+            corrs.append(r)
+            weights.append(len(v1) * std1 * std2)
 
-    # 3. 加權平均
-    if not weights or np.sum(weights) == 0:
-        return 0.0
-        
-    return np.average(corrs, weights=weights)
+    return np.average(corrs, weights=weights) if weights else 0.0
 
-# ===== Testing function =====
-def test_triplet_by_siamese(dataloader):
-    distances = np.array([])
-    labels = np.array([])
-
-    for _, data in enumerate(dataloader):
+def test_triplet_by_siamese(dataloader, desc="Testing"):
+    distances = []
+    labels = []
+    
+    logging.info(f"開始執行 {desc}，總批次數: {len(dataloader)}")
+    
+    # 使用 tqdm 顯示進度
+    for i, data in enumerate(tqdm(dataloader, desc=desc)):
         input1, input2, label = data
         input1 = input1.cpu().numpy()
         input2 = input2.cpu().numpy()
 
-        batch_scores = []
         for m1, m2 in zip(input1, input2):
-            # 如果 flatten，需要 reshape 回矩陣
-            if m1.ndim == 1:
-                side = int(np.sqrt(len(m1)))
-                m1 = m1.reshape(side, side)
-                m2 = m2.reshape(side, side)
-
+            # 取得 SCC 並轉換為距離
             scc_val = hicrep_scc(m1, m2)
-            dist = 1 - scc_val  # 轉換成距離
-            batch_scores.append(dist)
+            distances.append(1 - scc_val)
+            
+        labels.extend(label.cpu().detach().numpy())
+        
+        # 每 10 個 Batch 印一次 Log
+        if (i + 1) % 10 == 0:
+            logging.info(f"{desc} 進度: {i+1}/{len(dataloader)} 批次已完成")
 
-        distances = np.concatenate((distances, np.array(batch_scores)))
-        labels = np.concatenate((labels, label.cpu().detach().numpy()))
-
-    return distances, labels
+    return np.array(distances), np.array(labels)
 
 
 # ===== Train/Validation Dataset =====
