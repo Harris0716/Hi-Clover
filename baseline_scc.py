@@ -22,45 +22,51 @@ with open(args.json_file) as json_file:
 # ===== HiRep SCC wrapper =====
 # ===== 修正後的 HiRep SCC wrapper =====
 # 修改 baseline_scc.py 中的這部分
-def hicrep_scc(mat1, mat2, h=1, dBPMax=2000000):
+def hicrep_scc(mat1, mat2, h=1, bin_size=10000, dBPMax=2000000):
     """
-    mat1, mat2: 來自 mlhic 的 numpy 2D patches (通常是 256x256)
+    純 Numpy 實作的簡化版 SCC，用於處理子圖 patches。
     """
-    # 根據您的論文，子圖解析度為 10kb
-    current_binsize = 10000 
+    from scipy.ndimage import gaussian_filter
+    from scipy.stats import pearsonr
 
-    # 建立模擬物件以符合 hicrepSCC 的輸入要求
-    class CoolMock:
-        def __init__(self, matrix, binsize):
-            self.matrix_data = matrix
-            self.binsize = binsize
-        def matrix(self, balance=False):
-            # hicrep 內部會呼叫 .matrix()，我們直接回傳 numpy 陣列
-            return self
-        def fetch(self, chrom):
-            # 有些版本會呼叫 .fetch()
-            return self.matrix_data
-        @property
-        def binsize(self):
-            return self._binsize
-        @binsize.setter
-        def binsize(self, value):
-            self._binsize = value
+    # 1. 平滑化處理 (Smoothing) - 對應 hicrep 的 h 參數
+    if h > 0:
+        mat1_s = gaussian_filter(mat1, sigma=h)
+        mat2_s = gaussian_filter(mat2, sigma=h)
+    else:
+        mat1_s, mat2_s = mat1, mat2
 
-    # 封裝矩陣
-    mock1 = CoolMock(mat1, current_binsize)
-    mock1.binsize = current_binsize
-    mock2 = CoolMock(mat2, current_binsize)
-    mock2.binsize = current_binsize
+    # 2. 依照距離 (Strata) 計算相關係數
+    max_bin = int(dBPMax / bin_size)
+    side = mat1.shape[0]
+    corrs = []
+    weights = []
 
-    try:
-        # 呼叫原始匯入的 hicrepSCC
-        # 注意：h=1 是您原本設定的平滑化參數
-        return hicrepSCC(mock1, mock2, h, dBPMax, bDownSample=False)
-    except Exception as e:
-        # 如果還是失敗，回傳一個安全值並印出錯誤
-        print(f"SCC calculation failed: {e}")
+    for k in range(min(max_bin, side)):
+        # 取得距離對角線為 k 的所有元素
+        v1 = np.diag(mat1_s, k)
+        v2 = np.diag(mat2_s, k)
+        
+        # 移除全為 0 的區域以避免計算錯誤
+        mask = (v1 > 0) | (v2 > 0)
+        if np.sum(mask) < 2:
+            continue
+            
+        # 計算該層的相關係數
+        r, _ = pearsonr(v1[mask], v2[mask])
+        if np.isnan(r):
+            continue
+            
+        corrs.append(r)
+        # 使用該層的變異量乘上樣本數作為權重 (hicrep 標準做法)
+        weight = len(v1[mask]) * np.std(v1[mask]) * np.std(v2[mask])
+        weights.append(weight)
+
+    # 3. 加權平均得到 SCC
+    if not weights or np.sum(weights) == 0:
         return 0.0
+        
+    return np.average(corrs, weights=weights)
 
 
 # ===== Testing function =====
