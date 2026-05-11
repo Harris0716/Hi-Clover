@@ -136,6 +136,25 @@ class SEBlock(nn.Module):
         w = self.excitation(w).view(b, c, 1, 1)
         return x * w
 
+class TripletLeNetBatchNorm_Joint(TripletLeNetBatchNorm):
+    """TripletLeNetBatchNorm + pair_classifier for joint loss"""
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletLeNetBatchNorm_Joint, self).__init__(mask=mask, embedding_dim=embedding_dim)
+        self.pair_classifier = nn.Sequential(
+            nn.Linear(embedding_dim, 64),
+            nn.GELU(),
+            nn.Linear(64, 1)
+        )
+        # Initialize pair_classifier weights
+        for m in self.pair_classifier.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
+    def forward_pair_classify(self, emb1, emb2):
+        diff_feat = torch.abs(emb1 - emb2)
+        return self.pair_classifier(diff_feat)
+
 class TripletLeNetBatchNormSE(TripletNet):
     def __init__(self, mask=False, embedding_dim=128):
         super(TripletLeNetBatchNormSE, self).__init__(mask=mask)
@@ -242,176 +261,7 @@ class TripletLeNetBatchNormSE_Joint(TripletLeNetBatchNormSE):
 
 
 
-class TripletLeNetBatchNormImproved(TripletNet):
-    '''Improved architecture with progressive downsampling and Global Average Pooling'''
-    def __init__(self, mask=False):
-        super(TripletLeNetBatchNormImproved, self).__init__(mask=mask)
-        
-        self.features = nn.Sequential(
-            # Block 1: input 256x256 -> output 128x128
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
 
-            # Block 2: input 128x128 -> output 64x64
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-
-            # Block 3: input 64x64 -> output 32x32
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-
-            # Block 4: input 32x32 -> output 16x16
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
-            # Removed the original nn.AdaptiveAvgPool2d((4, 4))
-        )
-
-        self.linear = nn.Sequential(
-            # After global average pooling, spatial dims reduced to 1x1; input dim matches channel count 256
-            nn.Linear(256, 512),
-            nn.BatchNorm1d(512),
-            nn.GELU(),
-            nn.Dropout(p=0.5),
-            # Final output kept at 128 dims for Triplet Loss computation
-            nn.Linear(512, 128)
-        )
-        
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
-                # Replace Xavier with Kaiming initialization; nonlinearity set to relu to approximate GELU behavior
-                nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def forward_one(self, x):
-        x = self.mask_data(x)
-        x = self.features(x)
-        
-        # Apply Global Average Pooling (GAP) to reduce [Batch, 256, 16, 16] to [Batch, 256, 1, 1]
-        x = F.adaptive_avg_pool2d(x, (1, 1))
-
-        # Flatten to [Batch, 256]
-        x = x.view(x.size(0), -1)
-        
-        x = self.linear(x)
-        return F.normalize(x, p=2, dim=1)
-
-class TripletLeNetLayerNorm(TripletNet):
-    """
-    TripletLeNet with LayerNorm / GroupNorm instead of BatchNorm.
-    - Conv layers: GroupNorm(1, C) — per-sample, no batch dependency.
-    - Linear layer: LayerNorm(D).
-    Useful when BN causes overfitting or batch-dependent embeddings.
-    """
-    def __init__(self, mask=False):
-        super(TripletLeNetLayerNorm, self).__init__(mask=mask)
-
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=5, stride=1),
-            nn.GroupNorm(1, 32),  # equiv to LayerNorm over channels per spatial loc
-            nn.GELU(),
-            nn.MaxPool2d(2, stride=2),
-
-            nn.Conv2d(32, 64, kernel_size=5, stride=1),
-            nn.GroupNorm(1, 64),
-            nn.GELU(),
-            nn.MaxPool2d(2, stride=2),
-
-            nn.AdaptiveAvgPool2d((1, 1)),
-        )
-
-        self.linear = nn.Sequential(
-            nn.Linear(64, 256),
-            nn.LayerNorm(256),
-            nn.GELU(),
-            nn.Dropout(p=0.5),
-            nn.Linear(256, 128),
-        )
-
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def forward_one(self, x):
-        x = self.mask_data(x)
-        x = self.features(x)
-        x = x.view(x.size(0), -1)
-        x = self.linear(x)
-        return F.normalize(x, p=2, dim=1)
-
-
-class TripletLeNetV2(TripletNet):
-    """
-    A slightly deeper and wider variant of TripletLeNet:
-    - Adds a third conv block (64 -> 128) to increase receptive field and capacity.
-    - Keeps embedding dimension at 128 for compatibility with existing code.
-    """
-
-    def __init__(self, mask=False):
-        super(TripletLeNetV2, self).__init__(mask=mask)
-
-        self.features = nn.Sequential(
-            # Block 1: 1 -> 32
-            nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=0),
-            nn.BatchNorm2d(32),
-            nn.GELU(),
-            nn.MaxPool2d(2, stride=2),
-
-            # Block 2: 32 -> 64
-            nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=0),
-            nn.BatchNorm2d(64),
-            nn.GELU(),
-            nn.MaxPool2d(2, stride=2),
-
-            # Block 3: 64 -> 128
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
-            nn.GELU(),
-            nn.MaxPool2d(2, stride=2),
-
-            # Global average pooling to get a fixed-size 128-D feature vector per sample
-            nn.AdaptiveAvgPool2d((1, 1)),
-        )
-
-        self.linear = nn.Sequential(
-            nn.Linear(128, 256),
-            nn.BatchNorm1d(256),
-            nn.GELU(),
-            nn.Dropout(p=0.5),
-            nn.Linear(256, 128),
-        )
-
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def forward_one(self, x):
-        x = self.mask_data(x)
-        x = self.features(x)
-        x = x.view(x.size(0), -1)
-        x = self.linear(x)
-        return F.normalize(x, p=2, dim=1)
 
 # resnet
 class TripletResNet(nn.Module):
