@@ -87,8 +87,10 @@ with open(args.json_file) as f: dataset_config = json.load(f)
 
 train_dataset = GroupedTripletHiCDataset([
     TripletHiCDataset([HiCDatasetDec.load(p) for p in dataset_config[n]["training"]], 
-    reference=reference_genomes[dataset_config[n]["reference"]]) for n in args.data_inputs])
+    reference=reference_genomes[dataset_config[n]["reference"]]) for n in args.data_inputs],
+    h_flip=args.h_flip)  # <-- 加這個
 
+# validation 不做翻轉
 val_dataset = GroupedTripletHiCDataset([
     TripletHiCDataset([HiCDatasetDec.load(p) for p in dataset_config[n]["validation"]], 
     reference=reference_genomes[dataset_config[n]["reference"]]) for n in args.data_inputs])
@@ -178,14 +180,6 @@ try:
                     a[flip_mask] = a[flip_mask].transpose(-2, -1).flip(-2, -1)
                     p[flip_mask] = p[flip_mask].transpose(-2, -1).flip(-2, -1)
                     n[flip_mask] = n[flip_mask].transpose(-2, -1).flip(-2, -1)
-
-            # [New] 50% chance to apply random horizontal flip
-            if args.h_flip:
-                h_flip_mask = torch.rand(a.size(0), device=device) > 0.5
-                if h_flip_mask.any():
-                    a[h_flip_mask] = a[h_flip_mask].flip(-1)
-                    p[h_flip_mask] = p[h_flip_mask].flip(-1)
-                    n[h_flip_mask] = n[h_flip_mask].flip(-1)
 
             if jitter_transform is not None:
                 a, p, n = jitter_transform(a), jitter_transform(p), jitter_transform(n)

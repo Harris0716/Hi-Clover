@@ -216,30 +216,35 @@ class TripletHiCDataset(HiCDataset):
 class GroupedTripletHiCDataset(HiCDataset):
     """Grouping multiple Hi-C datasets together (triplet Datasets)"""
 
-    def __init__(self, list_of_HiCDatasets):
-        # self.reference = reference
+    def __init__(self, list_of_HiCDatasets, h_flip=False):
         self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
-        if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")  # stop running
+        self.h_flip = h_flip
+        if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")
         self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
         for dataset in list_of_HiCDatasets: self.add_data(dataset)
+        
+        # [NEW] Store original length, then append flipped copies
+        self.original_len = len(self.data)
+        if self.h_flip:
+            flipped = []
+            for item in self.data:
+                # item = (anchor_img, positive_img, negative_img, class_id)
+                flipped.append((
+                    item[0].flip(-1),   # anchor horizontal flip
+                    item[1].flip(-1),   # positive horizontal flip
+                    item[2].flip(-1),   # negative horizontal flip
+                    item[3]             # class_id stays the same
+                ))
+            self.data = self.data + tuple(flipped)
+            print(f"H-flip augmentation: {self.original_len} -> {len(self.data)} triplets (2x)")
 
     def add_data(self, dataset):
-        """Add a dataset to the group, supporting both regular and triplet formats.
-
-        Args:
-            dataset: Either HiCDataset or TripletHiCDataset object
-        """
-        # Check dataset type
         if not isinstance(dataset, (HiCDataset, TripletHiCDataset)):
             return print("file not HiCDataset or TripletHiCDataset")
-
-        # Check compatibility
         if self.resolution != dataset.resolution:
             return print("incorrect resolution")
         if self.data_res != dataset.data_res:
             return print("data resolutions do not match")
-
-        # Add data - will work for both regular pairs and triplets
         self.data = self.data + dataset.data
         self.metadata.append(dataset.metadata)
         self.starts.append(len(self.data))
@@ -248,7 +253,6 @@ class GroupedTripletHiCDataset(HiCDataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        # Will return either pair or triplet depending on input data type
         return self.data[idx]
     
 class SiameseHiCDataset(HiCDataset):
