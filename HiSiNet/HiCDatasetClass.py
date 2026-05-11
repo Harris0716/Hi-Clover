@@ -214,8 +214,6 @@ class TripletHiCDataset(HiCDataset):
         self.data = tuple(self.data)
 
 class GroupedTripletHiCDataset(HiCDataset):
-    """Grouping multiple Hi-C datasets together (triplet Datasets)"""
-
     def __init__(self, list_of_HiCDatasets, h_flip=False):
         self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
         self.h_flip = h_flip
@@ -223,20 +221,9 @@ class GroupedTripletHiCDataset(HiCDataset):
         self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
         for dataset in list_of_HiCDatasets: self.add_data(dataset)
         
-        # [NEW] Store original length, then append flipped copies
         self.original_len = len(self.data)
         if self.h_flip:
-            flipped = []
-            for item in self.data:
-                # item = (anchor_img, positive_img, negative_img, class_id)
-                flipped.append((
-                    item[0].flip(-1),   # anchor horizontal flip
-                    item[1].flip(-1),   # positive horizontal flip
-                    item[2].flip(-1),   # negative horizontal flip
-                    item[3]             # class_id stays the same
-                ))
-            self.data = self.data + tuple(flipped)
-            print(f"H-flip augmentation: {self.original_len} -> {len(self.data)} triplets (2x)")
+            print(f"H-flip augmentation: {self.original_len} -> {self.original_len * 2} triplets (2x)")
 
     def add_data(self, dataset):
         if not isinstance(dataset, (HiCDataset, TripletHiCDataset)):
@@ -250,9 +237,14 @@ class GroupedTripletHiCDataset(HiCDataset):
         self.starts.append(len(self.data))
 
     def __len__(self):
+        if self.h_flip:
+            return self.original_len * 2
         return len(self.data)
 
     def __getitem__(self, idx):
+        if self.h_flip and idx >= self.original_len:
+            item = self.data[idx - self.original_len]
+            return (item[0].flip(-1), item[1].flip(-1), item[2].flip(-1), item[3])
         return self.data[idx]
     
 class SiameseHiCDataset(HiCDataset):
