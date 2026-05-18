@@ -214,6 +214,117 @@ class TripletLeNetBatchNormSE_Joint(TripletLeNetBatchNormSE):
         diff_feat = torch.abs(emb1 - emb2)
         return self.pair_classifier(diff_feat)
 
+# ---------------------------------------------------------
+# CBAM (Convolutional Block Attention Module)
+# ---------------------------------------------------------
+class ChannelAttention(nn.Module):
+    def __init__(self, channels, reduction=4):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, channels // reduction),
+            nn.ReLU(),
+            nn.Linear(channels // reduction, channels)
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        avg_out = self.mlp(self.avg_pool(x).view(b, c))
+        max_out = self.mlp(self.max_pool(x).view(b, c))
+        return x * torch.sigmoid(avg_out + max_out).view(b, c, 1, 1)
+
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=kernel_size // 2)
+
+    def forward(self, x):
+        avg_out = x.mean(dim=1, keepdim=True)
+        max_out = x.max(dim=1, keepdim=True)[0]
+        attn = torch.sigmoid(self.conv(torch.cat([avg_out, max_out], dim=1)))
+        return x * attn
+
+
+class CBAM(nn.Module):
+    def __init__(self, channels, reduction=4, kernel_size=7):
+        super(CBAM, self).__init__()
+        self.channel_attn = ChannelAttention(channels, reduction)
+        self.spatial_attn = SpatialAttention(kernel_size)
+
+    def forward(self, x):
+        x = self.channel_attn(x)
+        x = self.spatial_attn(x)
+        return x
+
+
+# ---------------------------------------------------------
+# TripletLeNetBatchNormCBAM
+# ---------------------------------------------------------
+class TripletLeNetBatchNormCBAM(TripletNet):
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletLeNetBatchNormCBAM, self).__init__(mask=mask)
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=5, stride=1),
+            nn.BatchNorm2d(32),
+            nn.GELU(),
+            CBAM(32, reduction=4),
+            nn.MaxPool2d(2, stride=2),
+
+            nn.Conv2d(32, 64, kernel_size=5, stride=1),
+            nn.BatchNorm2d(64),
+            nn.GELU(),
+            CBAM(64, reduction=4),
+            nn.MaxPool2d(2, stride=2),
+
+            nn.AdaptiveAvgPool2d((4, 4))
+        )
+
+        self.linear = nn.Sequential(
+            nn.Linear(1024, 256),
+            nn.BatchNorm1d(256),
+            nn.GELU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(256, embedding_dim)
+        )
+
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward_one(self, x):
+        x = self.mask_data(x)
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        return F.normalize(x, p=2, dim=1)
+
+
+class TripletLeNetBatchNormCBAM_Joint(TripletLeNetBatchNormCBAM):
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletLeNetBatchNormCBAM_Joint, self).__init__(mask=mask, embedding_dim=embedding_dim)
+        self.pair_classifier = nn.Sequential(
+            nn.Linear(embedding_dim, 64),
+            nn.GELU(),
+            nn.Linear(64, 1)
+        )
+        for m in self.pair_classifier.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
+    def forward_pair_classify(self, emb1, emb2):
+        diff_feat = torch.abs(emb1 - emb2)
+        return self.pair_classifier(diff_feat)
+
+
 # class TripletLeNetBatchNorm(TripletNet):
 #     '''with batch norm'''
 #     def __init__(self, mask=False):
