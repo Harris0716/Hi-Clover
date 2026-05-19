@@ -218,14 +218,14 @@ class TripletLeNetBatchNormSE_Joint(TripletLeNetBatchNormSE):
 # CBAM (Convolutional Block Attention Module)
 # ---------------------------------------------------------
 class ChannelAttention(nn.Module):
-    def __init__(self, channels, reduction=4):
+    def __init__(self, channels, reduction=16):  # 4 -> 16
         super(ChannelAttention, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.mlp = nn.Sequential(
-            nn.Linear(channels, channels // reduction),
+            nn.Linear(channels, max(channels // reduction, 4)),  # 避免太小
             nn.ReLU(),
-            nn.Linear(channels // reduction, channels)
+            nn.Linear(max(channels // reduction, 4), channels)
         )
 
     def forward(self, x):
@@ -236,7 +236,7 @@ class ChannelAttention(nn.Module):
 
 
 class SpatialAttention(nn.Module):
-    def __init__(self, kernel_size=7):
+    def __init__(self, kernel_size=3):  # 7 -> 3
         super(SpatialAttention, self).__init__()
         self.conv = nn.Conv2d(2, 1, kernel_size, padding=kernel_size // 2)
 
@@ -248,7 +248,7 @@ class SpatialAttention(nn.Module):
 
 
 class CBAM(nn.Module):
-    def __init__(self, channels, reduction=4, kernel_size=7):
+    def __init__(self, channels, reduction=16, kernel_size=3):  # 兩個都更新預設值
         super(CBAM, self).__init__()
         self.channel_attn = ChannelAttention(channels, reduction)
         self.spatial_attn = SpatialAttention(kernel_size)
@@ -259,9 +259,6 @@ class CBAM(nn.Module):
         return x
 
 
-# ---------------------------------------------------------
-# TripletLeNetBatchNormCBAM
-# ---------------------------------------------------------
 class TripletLeNetBatchNormCBAM(TripletNet):
     def __init__(self, mask=False, embedding_dim=128):
         super(TripletLeNetBatchNormCBAM, self).__init__(mask=mask)
@@ -270,13 +267,13 @@ class TripletLeNetBatchNormCBAM(TripletNet):
             nn.Conv2d(1, 32, kernel_size=5, stride=1),
             nn.BatchNorm2d(32),
             nn.GELU(),
-            CBAM(32, reduction=4),
+            CBAM(32, reduction=16, kernel_size=3),  # 修改
             nn.MaxPool2d(2, stride=2),
 
             nn.Conv2d(32, 64, kernel_size=5, stride=1),
             nn.BatchNorm2d(64),
             nn.GELU(),
-            CBAM(64, reduction=4),
+            CBAM(64, reduction=16, kernel_size=3),  # 修改
             nn.MaxPool2d(2, stride=2),
 
             nn.AdaptiveAvgPool2d((4, 4))
@@ -305,24 +302,6 @@ class TripletLeNetBatchNormCBAM(TripletNet):
         x = x.view(x.size(0), -1)
         x = self.linear(x)
         return F.normalize(x, p=2, dim=1)
-
-
-class TripletLeNetBatchNormCBAM_Joint(TripletLeNetBatchNormCBAM):
-    def __init__(self, mask=False, embedding_dim=128):
-        super(TripletLeNetBatchNormCBAM_Joint, self).__init__(mask=mask, embedding_dim=embedding_dim)
-        self.pair_classifier = nn.Sequential(
-            nn.Linear(embedding_dim, 64),
-            nn.GELU(),
-            nn.Linear(64, 1)
-        )
-        for m in self.pair_classifier.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                nn.init.constant_(m.bias, 0)
-
-    def forward_pair_classify(self, emb1, emb2):
-        diff_feat = torch.abs(emb1 - emb2)
-        return self.pair_classifier(diff_feat)
 
 
 # class TripletLeNetBatchNorm(TripletNet):
