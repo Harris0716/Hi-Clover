@@ -78,7 +78,37 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # parameters
 # ---------------------------------------------------------
-file_param_info = f"{args.model_name}_{args.optimizer}_{args.scheduler}_{args.learning_rate}_{args.batch_size}_{args.seed}_{args.margin}"
+aug_tag = []
+if args.h_flip:          aug_tag.append("hflip")
+if args.random_flip:     aug_tag.append("rflip")
+if args.anti_diag_flip:  aug_tag.append("adflip")
+if args.semi_hard:       aug_tag.append("semihard")
+if args.mask:            aug_tag.append("mask")
+aug_str_tag = "_".join(aug_tag) if aug_tag else "noaug"
+
+joint_tag = f"joint{args.ce_weight}" if args.joint_loss else "nojoint"
+
+jitter_tag = ""
+if args.jitter_brightness > 0 or args.jitter_contrast > 0:
+    jitter_tag = f"_jit{args.jitter_brightness}c{args.jitter_contrast}"
+
+file_param_info = (
+    f"{args.model_name}"
+    f"_{args.optimizer}"
+    f"_{args.scheduler}"
+    f"_lr{args.learning_rate}"
+    f"_bs{args.batch_size}"
+    f"_wd{args.weight_decay}"
+    f"_emb{args.embedding_dim}"
+    f"_margin{args.margin}"
+    f"_acc{args.accumulation_steps}"
+    f"_pat{args.patience}"
+    f"_maxnorm{args.max_norm}"
+    f"_seed{args.seed}"
+    f"_{aug_str_tag}"
+    f"_{joint_tag}"
+    f"{jitter_tag}"
+)
 base_save_path = os.path.join(args.outpath, file_param_info)
 
 # ---------------------------------------------------------
@@ -208,18 +238,28 @@ try:
 
             # [CHANGED] Joint loss: pair-wise BCE
             if args.joint_loss:
-                B = a.size(0)
-                feat_ap = torch.abs(a_out - p_out)                    # (B, embedding_dim)
-                feat_an = torch.abs(a_out - n_out)                    # (B, embedding_dim)
+                if args.semi_hard and sh_mask.any():
+                    a_out_used = a_out[sh_mask]
+                    p_out_used = p_out[sh_mask]
+                    n_out_used = n_out[sh_mask]
+                    B = sh_mask.sum().item()
+                else:
+                    a_out_used = a_out
+                    p_out_used = p_out
+                    n_out_used = n_out
+                    B = a.size(0)
 
-                logit_ap = pair_clf(feat_ap).squeeze(1)               # (B,)
-                logit_an = pair_clf(feat_an).squeeze(1)               # (B,)
+                feat_ap = torch.abs(a_out_used - p_out_used)
+                feat_an = torch.abs(a_out_used - n_out_used)
 
-                logits = torch.cat([logit_ap, logit_an], dim=0)       # (2B,)
+                logit_ap = pair_clf(feat_ap).squeeze(1)
+                logit_an = pair_clf(feat_an).squeeze(1)
+
+                logits = torch.cat([logit_ap, logit_an], dim=0)
                 bce_labels = torch.cat([
-                    torch.zeros(B, device=device),                    # replicate → 0
-                    torch.ones(B, device=device)                      # condition → 1
-                ]).float()                                            # (2B,)
+                    torch.zeros(B, device=device),
+                    torch.ones(B, device=device)
+                ]).float()
 
                 bce_loss = ce_criterion(logits, bce_labels)
                 loss = triplet_loss + args.ce_weight * bce_loss
@@ -251,7 +291,24 @@ try:
             for data in val_loader:
                 a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
                 ao, po, no = model(a, p, n)
-                val_loss_sum += criterion(ao, po, no).item()
+                val_triplet_loss = criterion(ao, po, no)
+
+                if args.joint_loss:
+                    B = a.size(0)
+                    feat_ap = torch.abs(ao - po)
+                    feat_an = torch.abs(ao - no)
+                    logit_ap = pair_clf(feat_ap).squeeze(1)
+                    logit_an = pair_clf(feat_an).squeeze(1)
+                    logits = torch.cat([logit_ap, logit_an], dim=0)
+                    bce_labels = torch.cat([
+                        torch.zeros(B, device=device),
+                        torch.ones(B, device=device)
+                    ]).float()
+                    val_bce_loss = ce_criterion(logits, bce_labels)
+                    val_loss_sum += (val_triplet_loss + args.ce_weight * val_bce_loss).item()
+                else:
+                    val_loss_sum += val_triplet_loss.item()
+
                 c_ap.extend(F.pairwise_distance(ao, po).cpu().numpy())
                 c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
         
