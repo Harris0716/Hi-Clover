@@ -228,6 +228,17 @@ class GroupedTripletHiCDataset(HiCDataset):
         elif self.h_flip and self.random_flip:
             print(f"H-flip augmentation: random flip (50% probability, {self.original_len} triplets)")
 
+    def add_data(self, dataset):
+        if not isinstance(dataset, (HiCDataset, TripletHiCDataset)):
+            return print("file not HiCDataset or TripletHiCDataset")
+        if self.resolution != dataset.resolution:
+            return print("incorrect resolution")
+        if self.data_res != dataset.data_res:
+            return print("data resolutions do not match")
+        self.data = self.data + dataset.data
+        self.metadata.append(dataset.metadata)
+        self.starts.append(len(self.data))
+
     def __len__(self):
         if self.h_flip and not self.random_flip:
             return self.original_len * 2
