@@ -50,6 +50,7 @@ parser.add_argument('--jitter_brightness', type=float, default=0.0, help='ColorJ
 parser.add_argument('--jitter_contrast', type=float, default=0.0, help='ColorJitter contrast (0=off, e.g. 0.2 for augmentation)')
 parser.add_argument('--anti_diag_flip', action='store_true', help='Anti-Diagonal Flip')
 parser.add_argument('--h_flip', action='store_true', help='Horizontal Flip') 
+parser.add_argument('--random_flip', action='store_true', help='Random horizontal flip (50% prob) instead of 2x augmentation')
 parser.add_argument('--optimizer', type=str, default='adagrad', choices=['adagrad', 'adamw'], help='Optimizer choice: adagrad or adamw')
 parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension')
 parser.add_argument('--joint_loss', action='store_true', help='Use joint triplet + BCE loss (pair-wise)')
@@ -88,7 +89,8 @@ with open(args.json_file) as f: dataset_config = json.load(f)
 train_dataset = GroupedTripletHiCDataset([
     TripletHiCDataset([HiCDatasetDec.load(p) for p in dataset_config[n]["training"]], 
     reference=reference_genomes[dataset_config[n]["reference"]]) for n in args.data_inputs],
-    h_flip=args.h_flip)  # <-- 加這個
+    h_flip=args.h_flip,
+    random_flip=args.random_flip) 
 
 # validation 不做翻轉
 val_dataset = GroupedTripletHiCDataset([

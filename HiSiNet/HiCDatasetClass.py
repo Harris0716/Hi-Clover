@@ -214,38 +214,39 @@ class TripletHiCDataset(HiCDataset):
         self.data = tuple(self.data)
 
 class GroupedTripletHiCDataset(HiCDataset):
-    def __init__(self, list_of_HiCDatasets, h_flip=False):
+    def __init__(self, list_of_HiCDatasets, h_flip=False, random_flip=False):
         self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
         self.h_flip = h_flip
+        self.random_flip = random_flip
         if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")
         self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
         for dataset in list_of_HiCDatasets: self.add_data(dataset)
         
         self.original_len = len(self.data)
-        if self.h_flip:
+        if self.h_flip and not self.random_flip:
             print(f"H-flip augmentation: {self.original_len} -> {self.original_len * 2} triplets (2x)")
-
-    def add_data(self, dataset):
-        if not isinstance(dataset, (HiCDataset, TripletHiCDataset)):
-            return print("file not HiCDataset or TripletHiCDataset")
-        if self.resolution != dataset.resolution:
-            return print("incorrect resolution")
-        if self.data_res != dataset.data_res:
-            return print("data resolutions do not match")
-        self.data = self.data + dataset.data
-        self.metadata.append(dataset.metadata)
-        self.starts.append(len(self.data))
+        elif self.h_flip and self.random_flip:
+            print(f"H-flip augmentation: random flip (50% probability, {self.original_len} triplets)")
 
     def __len__(self):
-        if self.h_flip:
+        if self.h_flip and not self.random_flip:
             return self.original_len * 2
         return len(self.data)
 
     def __getitem__(self, idx):
-        if self.h_flip and idx >= self.original_len:
-            item = self.data[idx - self.original_len]
+        # 2x 模式（原本行為）
+        if self.h_flip and not self.random_flip:
+            if idx >= self.original_len:
+                item = self.data[idx - self.original_len]
+                return (item[0].flip(-1), item[1].flip(-1), item[2].flip(-1), item[3])
+            return self.data[idx]
+        
+        # 隨機翻轉模式
+        item = self.data[idx]
+        if self.h_flip and self.random_flip and torch.rand(1).item() > 0.5:
             return (item[0].flip(-1), item[1].flip(-1), item[2].flip(-1), item[3])
-        return self.data[idx]
+        
+        return item
     
 class SiameseHiCDataset(HiCDataset):
     """Paired Hi-C datasets by genomic location."""
