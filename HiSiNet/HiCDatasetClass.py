@@ -206,7 +206,8 @@ class TripletHiCDataset(HiCDataset):
                 for i in range(datasets):
                     if positions[i][-1:] != [pos]:
                         continue
-                    curr_data.append(list_of_HiCDatasets[i][starts[i] + len(positions[i]) - 1])
+                    last_idx = starts[i] + len(positions[i]) - 1
+                    curr_data.append(list_of_HiCDatasets[i][last_idx])
                     positions[i].pop()
                 self.append_data(curr_data, pos)
 
@@ -215,6 +216,20 @@ class TripletHiCDataset(HiCDataset):
         self.data = tuple(self.data)
 
 class GroupedTripletHiCDataset(HiCDataset):
+    """
+    Grouped container for multiple TripletHiCDataset instances.
+
+    Note: This class inherits from HiCDataset for type-checking purposes only.
+    The following parent class methods are NOT supported and will raise errors if called:
+        - get_genomic_positions()
+        - save()
+        - add_chromosome()
+    
+    Only the following interfaces are valid:
+        - __len__()
+        - __getitem__()
+        - add_data()
+    """
     def __init__(self, list_of_HiCDatasets, h_flip=False, random_flip=False):
         self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
         self.h_flip = h_flip
