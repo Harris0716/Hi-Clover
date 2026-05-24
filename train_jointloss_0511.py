@@ -286,12 +286,15 @@ try:
 
         # Validation Phase
         model.eval()
-        val_loss_sum, c_ap, c_an = 0.0, [], []
+        # [CHANGED] val_triplet_sum 用於 early stopping，val_loss_sum 用於 log
+        val_loss_sum, val_triplet_sum, c_ap, c_an = 0.0, 0.0, [], []
         with torch.no_grad():
             for data in val_loader:
                 a, p, n = data[0].to(device), data[1].to(device), data[2].to(device)
                 ao, po, no = model(a, p, n)
                 val_triplet_loss = criterion(ao, po, no)
+                # [CHANGED] 無論是否使用 joint loss，都累積 triplet loss
+                val_triplet_sum += val_triplet_loss.item()
 
                 if args.joint_loss:
                     B = a.size(0)
@@ -313,6 +316,8 @@ try:
                 c_an.extend(F.pairwise_distance(ao, no).cpu().numpy())
         
         avg_v = val_loss_sum / len(val_loader)
+        # [CHANGED] avg_triplet 用於 early stopping
+        avg_triplet = val_triplet_sum / len(val_loader)
         avg_ap, avg_an = np.mean(c_ap), np.mean(c_an)
         l_ratio = np.log10((avg_an + 1e-6) / (avg_ap + 1e-6))
         
@@ -333,12 +338,14 @@ try:
                 print(f"-> LR changed {lr_before:.2e} -> {current_lr:.2e}")
 
         lr_str = f", LR: {lr_before:.2e}" if scheduler else ""
-        print(f"Epoch [{epoch+1}] Val Loss: {avg_v:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s{lr_str}")
+        # [CHANGED] 同時印出 joint val loss 與 triplet val loss
+        print(f"Epoch [{epoch+1}] Val Loss (joint): {avg_v:.4f}, Val Triplet: {avg_triplet:.4f}, Log-Ratio: {l_ratio:.4f}, Time: {time.time()-epoch_start:.2f}s{lr_str}")
         if args.semi_hard:
             sh_ratio = semi_hard_count / max(total_sample_count, 1)
             print(f"  Semi-hard ratio: {sh_ratio:.4f} ({semi_hard_count}/{total_sample_count}), Fallback batches: {fallback_count}")
-        if avg_v < best_val_loss:
-            best_val_loss = avg_v
+        # [CHANGED] early stopping 改用 avg_triplet
+        if avg_triplet < best_val_loss:
+            best_val_loss = avg_triplet
             patience_counter = 0
             
             current_date = time.strftime("%Y%m%d")
