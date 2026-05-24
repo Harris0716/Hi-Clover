@@ -1,5 +1,6 @@
 import pickle
 import numpy as np
+import torch
 from torch import as_tensor as as_torch_tensor, float as torch_float
 from collections import OrderedDict
 from torch.utils.data import Dataset
