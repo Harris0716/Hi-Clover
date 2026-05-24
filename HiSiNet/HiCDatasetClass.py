@@ -219,6 +219,8 @@ class GroupedTripletHiCDataset(HiCDataset):
         self.data, self.metadata, self.starts, self.files = tuple(), [], [], set()
         self.h_flip = h_flip
         self.random_flip = random_flip
+        if h_flip and random_flip:
+            print("Warning: both h_flip and random_flip are set. random_flip mode will be used (50% probability, no 2x augmentation).")
         if not isinstance(list_of_HiCDatasets, list): print("list of HiCDataset is not list type")
         self.resolution, self.data_res = list_of_HiCDatasets[0].resolution, list_of_HiCDatasets[0].data_res
         for dataset in list_of_HiCDatasets: self.add_data(dataset)
