@@ -18,17 +18,14 @@ class TripletLoss(nn.Module):
         losses = torch.relu(distance_positive - distance_negative + self.margin)
         return losses.mean()
 
-class SoftTripletLoss(nn.Module):
-    def __init__(self):
-        super(SoftTripletLoss, self).__init__()
-        
-    def forward(self, anchor, positive, negative):
-        dist_ap = F.pairwise_distance(anchor, positive)
-        dist_an = F.pairwise_distance(anchor, negative)
+class SoftMarginTripletLoss(nn.Module):
+    def __init__(self, margin=None):
+        super(SoftMarginTripletLoss, self).__init__()
 
-        loss = F.softplus(dist_ap - dist_an).mean()
-        
-        return loss
+    def forward(self, anchor, positive, negative):
+        d_ap = torch.norm(anchor - positive, p=2, dim=1)
+        d_an = torch.norm(anchor - negative, p=2, dim=1)
+        return F.softplus(d_ap - d_an).mean()
 
 
 class ContrastiveLoss(nn.Module):
