@@ -34,6 +34,8 @@ parser.add_argument('--seed', type=int, default=42)
 # 診斷專用
 parser.add_argument('--n_samples', type=int, default=256,
                     help='故意 overfit 的 triplet 數量（取一小撮）')
+parser.add_argument('--batch_size', type=int, default=32,
+                    help='每次 forward 的 mini-batch 大小（避免 OOM）')
 parser.add_argument('--learning_rate', type=float, default=1e-3)
 parser.add_argument('--epochs', type=int, default=300,
                     help='在這一小撮資料上反覆訓練幾輪')
@@ -104,22 +106,38 @@ optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=
 print("\nEpoch |   Loss   | d(a,p) | d(a,n) | log-ratio")
 print("-" * 50)
 
+bs = args.batch_size
 best_loss = float('inf')
 for epoch in range(args.epochs):
-    optimizer.zero_grad()
-    a_out, p_out, n_out = model(a, p, ng)
-    loss = criterion(a_out, p_out, n_out)
-    loss.backward()
-    optimizer.step()
+    epoch_loss_sum = 0.0
+    n_batches = 0
+    d_ap_sum, d_an_sum = 0.0, 0.0
 
-    if (epoch + 1) % args.log_every == 0 or epoch == 0:
+    # 分 mini-batch 走過這一小撮資料（每個 batch 各自更新一次）
+    for start in range(0, n, bs):
+        end = min(start + bs, n)
+        ab, pb, nb = a[start:end], p[start:end], ng[start:end]
+
+        optimizer.zero_grad()
+        a_out, p_out, n_out = model(ab, pb, nb)
+        loss = criterion(a_out, p_out, n_out)
+        loss.backward()
+        optimizer.step()
+
+        epoch_loss_sum += loss.item()
+        n_batches += 1
         with torch.no_grad():
-            d_ap = F.pairwise_distance(a_out, p_out).mean().item()
-            d_an = F.pairwise_distance(a_out, n_out).mean().item()
-            lr_ratio = np.log10((d_an + 1e-6) / (d_ap + 1e-6))
-        print(f"{epoch+1:5d} | {loss.item():.5f} | {d_ap:.4f} | {d_an:.4f} | {lr_ratio:+.4f}")
+            d_ap_sum += F.pairwise_distance(a_out, p_out).mean().item()
+            d_an_sum += F.pairwise_distance(a_out, n_out).mean().item()
 
-    best_loss = min(best_loss, loss.item())
+    epoch_loss = epoch_loss_sum / n_batches
+    if (epoch + 1) % args.log_every == 0 or epoch == 0:
+        d_ap = d_ap_sum / n_batches
+        d_an = d_an_sum / n_batches
+        lr_ratio = np.log10((d_an + 1e-6) / (d_ap + 1e-6))
+        print(f"{epoch+1:5d} | {epoch_loss:.5f} | {d_ap:.4f} | {d_an:.4f} | {lr_ratio:+.4f}")
+
+    best_loss = min(best_loss, epoch_loss)
 
 # ------------------------------------------------------------
 # 判讀
