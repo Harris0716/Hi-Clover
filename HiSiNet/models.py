@@ -349,6 +349,76 @@ class TripletLeNetBatchNormCBAM(TripletNet):
 #         return F.normalize(x, p=2, dim=1)
 
 
+class TripletLeNetBatchNormSE_Dilated(TripletNet):
+    """
+    SE 版 backbone + 第二層卷積使用 dilation=2，擴大感受野以捕捉
+    接觸矩陣中較遠距離的交互結構（對應 Hi-C 的 genomic distance bias）。
+    第一層維持普通卷積（抓局部細節），第二層 dilation 擴感受野。
+    因後接 AdaptiveAvgPool2d((4,4))，輸出尺寸自動對齊，Linear 維度不變。
+    """
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletLeNetBatchNormSE_Dilated, self).__init__(mask=mask)
+ 
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=5, stride=1),
+            nn.BatchNorm2d(32),
+            nn.GELU(),
+            SEBlock(32, reduction=4),
+            nn.MaxPool2d(2, stride=2),
+ 
+            # 第二層加 dilation=2：核仍 5x5，但感受野擴大（取樣點間隔 2）
+            nn.Conv2d(32, 64, kernel_size=5, stride=1, dilation=2),
+            nn.BatchNorm2d(64),
+            nn.GELU(),
+            SEBlock(64, reduction=4),
+            nn.MaxPool2d(2, stride=2),
+ 
+            nn.AdaptiveAvgPool2d((4, 4))
+        )
+ 
+        self.linear = nn.Sequential(
+            nn.Linear(1024, 256),
+            nn.BatchNorm1d(256),
+            nn.GELU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(256, embedding_dim)
+        )
+ 
+        self._initialize_weights()
+ 
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+ 
+    def forward_one(self, x):
+        x = self.mask_data(x)
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        return F.normalize(x, p=2, dim=1)
+ 
+ 
+class TripletLeNetBatchNormSE_Dilated_Joint(TripletLeNetBatchNormSE_Dilated):
+    """Dilated SE 版 + pair_classifier，供 joint loss 使用。"""
+    def __init__(self, mask=False, embedding_dim=128):
+        super(TripletLeNetBatchNormSE_Dilated_Joint, self).__init__(
+            mask=mask, embedding_dim=embedding_dim)
+        self.pair_classifier = nn.Sequential(
+            nn.Linear(embedding_dim, 64),
+            nn.GELU(),
+            nn.Linear(64, 1)
+        )
+        for m in self.pair_classifier.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
+ 
+    def forward_pair_classify(self, emb1, emb2):
+        diff_feat = torch.abs(emb1 - emb2)
+        return self.pair_classifier(diff_feat)
 
 
 
