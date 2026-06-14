@@ -15,10 +15,6 @@
 #              class label inferred as (1 - a_lbl) for binary condition setup
 # [ADDED v6] --soft_margin flag: use SoftMarginTripletLoss (softplus, no hard cutoff)
 # [ADDED v7] --batch_hard flag: always select hardest negative (skip semi-hard window)
-# [CHANGED v8] True joint loss: BCE updates both backbone and pair_classifier.
-#              Use a single optimizer for all model parameters.
-#              No .detach() in pair-wise BCE branch.
-# [ADDED v8] Save training history as .npz and mark best validation epoch in loss plot.
 
 import numpy as np
 import torch
@@ -39,7 +35,7 @@ from HiSiNet.reference_dictionaries import reference_genomes
 # ---------------------------------------------------------
 # Argument Parser
 # ---------------------------------------------------------
-parser = argparse.ArgumentParser(description='Triplet network (v8 true joint, single optimizer)')
+parser = argparse.ArgumentParser(description='Triplet network (v7)')
 parser.add_argument('--model_name', type=str, help='Model from models.py')
 parser.add_argument('--json_file', type=str, help='JSON dictionary with file paths')
 parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
@@ -79,9 +75,10 @@ parser.add_argument('--optimizer', type=str, default='adagrad',
 parser.add_argument('--embedding_dim', type=int, default=128)
 parser.add_argument('--joint_loss', action='store_true')
 parser.add_argument('--ce_weight', type=float, default=0.5)
-parser.add_argument('--clf_lr', type=float, default=1e-3,
-                    help='Kept for compatibility. Ignored in v8 single-optimizer true joint mode.')
+parser.add_argument('--clf_lr', type=float, default=1e-3)
 parser.add_argument('--outpath', type=str, default="outputs/")
+parser.add_argument('--run_name', type=str, default=None,
+                    help='Short output file prefix. If set, output files become <run_name>_best.ckpt, <run_name>_history.npz, etc.')
 parser.add_argument("--data_inputs", nargs='+')
 
 args = parser.parse_args()
@@ -103,31 +100,82 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # File naming
 # ---------------------------------------------------------
-aug_tag = []
-if args.h_flip:         aug_tag.append("hflip")
-if args.random_flip:    aug_tag.append("rflip")
-if args.anti_diag_flip: aug_tag.append("adflip")
-if args.batch_hard:     aug_tag.append("batchhard")
-elif args.semi_hard:    aug_tag.append("semihard")
-if args.mask:           aug_tag.append("mask")
-aug_str_tag = "_".join(aug_tag) if aug_tag else "noaug"
-joint_tag   = f"truejoint{args.ce_weight}" if args.joint_loss else "nojoint"
-loss_tag    = "softmargin" if args.soft_margin else f"margin{args.margin}"
-jitter_tag  = ""
-if args.jitter_brightness > 0 or args.jitter_contrast > 0:
-    jitter_tag = f"_jit{args.jitter_brightness}c{args.jitter_contrast}"
+def _safe_num(x):
+    """Make a short, filesystem-friendly numeric tag."""
+    s = f"{x:g}"
+    return s.replace("-", "m").replace(".", "p")
 
-file_param_info = (
-    f"{args.model_name}"
-    f"_{args.optimizer}_{args.scheduler}"
-    f"_lr{args.learning_rate}_bs{args.batch_size}"
-    f"_wd{args.weight_decay}_emb{args.embedding_dim}"
-    f"_{loss_tag}_acc{args.accumulation_steps}"
-    f"_pat{args.patience}_maxnorm{args.max_norm}"
-    f"_seed{args.seed}_{aug_str_tag}_{joint_tag}{jitter_tag}"
-)
+
+def _short_model_name(name):
+    """Shorten common model names to keep output filenames readable."""
+    mapping = {
+        "TripletLeNetBatchNormSE": "SE",
+        "TripletLeNetBatchNormSE_Joint": "SEJoint",
+        "TripletLeNetBatchNormSE_Dilated": "SEDilated",
+        "TripletLeNetBatchNormSE_Dilated_Joint": "SEDilatedJoint",
+    }
+    if name in mapping:
+        return mapping[name]
+    # Conservative fallback for other model names.
+    return (name.replace("Triplet", "")
+                .replace("LeNet", "LN")
+                .replace("BatchNorm", "BN"))
+
+
+def _build_short_run_name(args):
+    """Build a concise default filename prefix.
+
+    The output directory already records the full experiment context, so the
+    filename should only contain the important identifiers. Use --run_name to
+    override this completely, e.g. --run_name TJ025.
+    """
+    data_tag = "-".join(args.data_inputs) if args.data_inputs else "data"
+    model_tag = _short_model_name(args.model_name)
+
+    method = []
+    if args.h_flip:
+        method.append("hflip")
+    if args.random_flip:
+        method.append("rflip")
+    if args.anti_diag_flip:
+        method.append("adflip")
+    if args.batch_hard:
+        method.append("batchhard")
+    elif args.semi_hard:
+        method.append("semihard")
+    if args.mask:
+        method.append("mask")
+
+    if args.joint_loss:
+        method.append(f"TJce{_safe_num(args.ce_weight)}")
+    else:
+        method.append("nojoint")
+
+    if args.soft_margin:
+        loss_tag = "softmargin"
+    else:
+        loss_tag = f"m{_safe_num(args.margin)}"
+
+    opt_tag = f"{args.optimizer}-{args.scheduler}"
+    lr_tag = f"lr{_safe_num(args.learning_rate)}"
+    seed_tag = f"s{args.seed}"
+
+    parts = [data_tag, model_tag] + method + [loss_tag, opt_tag, lr_tag, seed_tag]
+    return "_".join(parts)
+
+
+if args.run_name:
+    file_param_info = args.run_name
+else:
+    file_param_info = _build_short_run_name(args)
+
+# All training artifacts use this short prefix:
+#   <prefix>_YYYYMMDD_best.ckpt
+#   <prefix>_history.npz
+#   <prefix>_training_stats.pdf
+#   <prefix>_val_dist_hist.pdf
 base_save_path = os.path.join(args.outpath, file_param_info)
-
+print(f"Output file prefix: {file_param_info}")
 # ---------------------------------------------------------
 # Data Loading
 # ---------------------------------------------------------
@@ -191,19 +239,18 @@ def make_optimizer(params, lr):
         return optim.AdamW(params, lr=lr, weight_decay=args.weight_decay)
     return optim.Adagrad(params, lr=lr, weight_decay=args.weight_decay)
 
-# v8 true joint uses a single optimizer for all model parameters.
-# When --joint_loss is enabled, BCE gradients are allowed to flow through
-# pair_classifier back into the embedding backbone.
-optimizer     = make_optimizer(list(model.parameters()), args.learning_rate)
+optimizer     = make_optimizer(backbone_params, args.learning_rate)
 scheduler     = None
 ce_criterion  = None
 pair_clf      = None
+optimizer_clf = None
 
 if args.joint_loss:
     ce_criterion  = nn.BCEWithLogitsLoss()
     pair_clf      = model.module.pair_classifier if hasattr(model, 'module') else model.pair_classifier
-    print(f"True joint loss enabled: triplet_loss + {args.ce_weight} * BCE_loss (pair-wise)")
-    print(f"Single optimizer lr: {args.learning_rate}; --clf_lr is ignored in this version.")
+    optimizer_clf = make_optimizer(clf_params, args.clf_lr)
+    print(f"Joint loss enabled: triplet_loss + {args.ce_weight} * BCE_loss (pair-wise)")
+    print(f"Backbone lr: {args.learning_rate}, Classifier lr: {args.clf_lr}")
 
 if args.scheduler == 'plateau':
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_factor,
@@ -224,11 +271,8 @@ sched_label = {"plateau": "ReduceLROnPlateau",
                "none":    "None"}[args.scheduler]
 
 best_val_loss    = float('inf')
-best_epoch       = -1
 patience_counter = 0
-train_losses, val_losses                         = [], []
-train_bce_losses, val_bce_losses                 = [], []
-train_total_losses, val_total_losses             = [], []
+train_losses, val_losses, val_bce_losses        = [], [], []
 val_log_ratio_history                            = []
 grad_norm_backbone_history, grad_norm_clf_history = [], []
 lr_history                                       = []
@@ -250,6 +294,8 @@ try:
         total_sample_count   = 0
 
         optimizer.zero_grad()
+        if optimizer_clf is not None:
+            optimizer_clf.zero_grad()
 
         # ── Per-batch loop ────────────────────────────────────────
         for i, data in enumerate(train_loader):
@@ -272,35 +318,31 @@ try:
             # ── Batch-internal Mining (semi-hard or batch-hard) ───
             if do_mining:
                 B = a.size(0)
-
-                # Build the gradient-carrying pool outside no_grad.
-                # Selection is done with detached embeddings, but the selected
-                # negative used in triplet loss still keeps gradient.
-                pool_emb_grad = torch.cat([a_out, p_out, n_out], dim=0)       # [3B, D]
-
                 with torch.no_grad():
-                    pool_emb_select = pool_emb_grad.detach()
+                    # batch 內所有樣本構成候選池：anchor / positive 同 class，negative 異 class
+                    pool_emb = torch.cat([a_out, p_out, n_out], dim=0)        # [3B, D]
                     pool_lbl = torch.cat([a_lbl, a_lbl, 1 - a_lbl], dim=0)    # [3B]
 
-                    d_ap     = F.pairwise_distance(a_out, p_out).detach()    # [B]
-                    dist_mat = torch.cdist(a_out.detach(), pool_emb_select)  # [B, 3B]
+                    d_ap     = F.pairwise_distance(a_out, p_out)             # [B]
+                    dist_mat = torch.cdist(a_out, pool_emb)                  # [B, 3B]
 
-                    # Candidate negatives must be from a different class.
-                    diff_class = pool_lbl.unsqueeze(0) != a_lbl.unsqueeze(1) # [B, 3B]
+                    # 候選必須與 anchor 不同 class（同 class 的 anchor/positive 自動被排除）
+                    diff_class = pool_lbl.unsqueeze(0) != a_lbl.unsqueeze(1)  # [B, 3B]
 
                     large = torch.tensor(float('inf'), device=device)
 
-                    # Hardest negative: nearest different-class sample.
+                    # hardest negative（異 class 中距離最近者）— batch_hard 直接用、semi_hard 當 fallback
                     hard_dist = torch.where(diff_class, dist_mat, large)
                     _, hard_min_idx = hard_dist.min(dim=1)
 
                     if args.batch_hard:
+                        # 永遠選 hardest negative
                         selected_idx = hard_min_idx
                         semi_hard_count    += 0
                         fallback_count     += B
                         total_sample_count += B
                     else:
-                        # semi-hard: d(a,p) < d(a,n) < d(a,p) + margin
+                        # semi-hard:  d(a,p) < d(a,n) < d(a,p) + margin
                         sh_cond = (dist_mat > d_ap.unsqueeze(1)) & \
                                   (dist_mat < (d_ap + args.margin).unsqueeze(1))
                         sh_mask = diff_class & sh_cond
@@ -314,7 +356,8 @@ try:
                         fallback_count     += (~has_sh).sum().item()
                         total_sample_count += B
 
-                selected_neg_emb = pool_emb_grad[selected_idx]               # [B, D]
+                # 用帶 gradient 的 pool_emb 取出被選中的 negative
+                selected_neg_emb = pool_emb[selected_idx]                    # [B, D]
                 triplet_loss = criterion(a_out, p_out, selected_neg_emb)
                 a_u, p_u, n_u = a_out, p_out, selected_neg_emb
             else:
@@ -324,10 +367,11 @@ try:
 
             # ── Backward ─────────────────────────────────────────
             if args.joint_loss:
-                # v8 true joint: do NOT detach embeddings.
-                # BCE loss updates both pair_classifier and embedding backbone.
-                feat_ap  = torch.abs(a_u - p_u)
-                feat_an  = torch.abs(a_u - n_u)
+                # detach cuts the BCE computation graph from backbone entirely.
+                # pair_clf receives gradients only from bce backward.
+                # backbone receives gradients only from triplet backward.
+                feat_ap  = torch.abs(a_u.detach() - p_u.detach())
+                feat_an  = torch.abs(a_u.detach() - n_u.detach())
                 logit_ap = pair_clf(feat_ap).squeeze(1)
                 logit_an = pair_clf(feat_an).squeeze(1)
                 logits   = torch.cat([logit_ap, logit_an], dim=0)
@@ -337,8 +381,9 @@ try:
                 ]).float()
                 bce_loss = ce_criterion(logits, bce_labels)
 
-                total_loss = triplet_loss + args.ce_weight * bce_loss
-                (total_loss / accumulation_steps).backward()
+                # Two independent backward passes — no retain_graph needed
+                (triplet_loss / accumulation_steps).backward()
+                (args.ce_weight * bce_loss / accumulation_steps).backward()
 
                 running_triplet_loss += triplet_loss.item()
                 running_bce_loss     += bce_loss.item()
@@ -350,13 +395,14 @@ try:
             if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
                 grad_norm_b = nn.utils.clip_grad_norm_(backbone_params, max_norm=args.max_norm)
                 e_norms_backbone.append(grad_norm_b.item())
-
-                if args.joint_loss and len(clf_params) > 0:
-                    grad_norm_c = nn.utils.clip_grad_norm_(clf_params, max_norm=args.max_norm)
-                    e_norms_clf.append(grad_norm_c.item())
-
                 optimizer.step()
                 optimizer.zero_grad()
+
+                if optimizer_clf is not None:
+                    grad_norm_c = nn.utils.clip_grad_norm_(clf_params, max_norm=args.max_norm)
+                    e_norms_clf.append(grad_norm_c.item())
+                    optimizer_clf.step()
+                    optimizer_clf.zero_grad()
 
             if (i + 1) % 100 == 0 or (i + 1) == len(train_loader):
                 d_ap_log = F.pairwise_distance(a_out, p_out).mean().item()
@@ -401,17 +447,9 @@ try:
         l_ratio     = np.log10((np.mean(c_an) + 1e-6) / (np.mean(c_ap) + 1e-6))
 
         # val_losses = triplet only, consistent with early stopping
-        avg_train_triplet = running_triplet_loss / len(train_loader)
-        avg_train_bce     = running_bce_loss / len(train_loader) if args.joint_loss else 0.0
-        avg_train_total   = avg_train_triplet + args.ce_weight * avg_train_bce if args.joint_loss else avg_train_triplet
-        avg_val_total     = avg_triplet + args.ce_weight * avg_bce if args.joint_loss else avg_triplet
-
-        train_losses.append(avg_train_triplet)
+        train_losses.append(running_triplet_loss / len(train_loader))
         val_losses.append(avg_triplet)
-        train_bce_losses.append(avg_train_bce)
         val_bce_losses.append(avg_bce)
-        train_total_losses.append(avg_train_total)
-        val_total_losses.append(avg_val_total)
         val_log_ratio_history.append(l_ratio)
         grad_norm_backbone_history.append(np.mean(e_norms_backbone) if e_norms_backbone else 0.0)
         grad_norm_clf_history.append(np.mean(e_norms_clf) if e_norms_clf else 0.0)
@@ -442,7 +480,6 @@ try:
         # Early stopping based on triplet loss only
         if avg_triplet < best_val_loss:
             best_val_loss    = avg_triplet
-            best_epoch       = epoch
             patience_counter = 0
             current_date     = time.strftime("%Y%m%d")
             torch.save(model.state_dict(), f"{base_save_path}_{current_date}_best.ckpt")
@@ -457,30 +494,6 @@ try:
 
 except KeyboardInterrupt:
     print("\nTraining interrupted. Plotting...")
-
-# ---------------------------------------------------------
-# Save Training History
-# ---------------------------------------------------------
-history_path = base_save_path + "_history.npz"
-np.savez_compressed(
-    history_path,
-    train_losses=np.array(train_losses),
-    val_losses=np.array(val_losses),
-    train_bce_losses=np.array(train_bce_losses),
-    val_bce_losses=np.array(val_bce_losses),
-    train_total_losses=np.array(train_total_losses),
-    val_total_losses=np.array(val_total_losses),
-    val_log_ratio_history=np.array(val_log_ratio_history),
-    grad_norm_backbone_history=np.array(grad_norm_backbone_history),
-    grad_norm_clf_history=np.array(grad_norm_clf_history),
-    lr_history=np.array(lr_history),
-    best_epoch=np.array(best_epoch),
-    best_val_loss=np.array(best_val_loss),
-    ce_weight=np.array(args.ce_weight),
-    joint_loss=np.array(args.joint_loss),
-    true_joint_single_optimizer=np.array(True),
-)
-print(f"Training history saved: {history_path}")
 
 # ---------------------------------------------------------
 # Visualization
@@ -512,14 +525,7 @@ col = 0
 
 axes[col].plot(train_losses, label='Train Triplet')
 axes[col].plot(val_losses,   label='Val Triplet')
-if len(val_losses) > 0 and best_epoch >= 0:
-    axes[col].axvline(best_epoch, color='red', ls='--', linewidth=2,
-                      label=f'Best Epoch ({best_epoch + 1})')
-    axes[col].scatter(best_epoch, val_losses[best_epoch], color='red', s=60, zorder=5)
-    axes[col].set_title(f'Triplet Loss (early-stopping metric)\n'
-                        f'Best Val={best_val_loss:.4f} @ Epoch {best_epoch + 1}')
-else:
-    axes[col].set_title('Triplet Loss (early-stopping metric)')
+axes[col].set_title('Triplet Loss (early-stopping metric)')
 axes[col].legend()
 col += 1
 
