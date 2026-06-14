@@ -77,6 +77,8 @@ parser.add_argument('--joint_loss', action='store_true')
 parser.add_argument('--ce_weight', type=float, default=0.5)
 parser.add_argument('--clf_lr', type=float, default=1e-3)
 parser.add_argument('--outpath', type=str, default="outputs/")
+parser.add_argument('--run_name', type=str, default=None,
+                    help='Short output file prefix. If set, output files become <run_name>_best.ckpt, <run_name>_history.npz, etc.')
 parser.add_argument("--data_inputs", nargs='+')
 
 args = parser.parse_args()
@@ -98,31 +100,82 @@ np.random.seed(args.seed)
 # ---------------------------------------------------------
 # File naming
 # ---------------------------------------------------------
-aug_tag = []
-if args.h_flip:         aug_tag.append("hflip")
-if args.random_flip:    aug_tag.append("rflip")
-if args.anti_diag_flip: aug_tag.append("adflip")
-if args.batch_hard:     aug_tag.append("batchhard")
-elif args.semi_hard:    aug_tag.append("semihard")
-if args.mask:           aug_tag.append("mask")
-aug_str_tag = "_".join(aug_tag) if aug_tag else "noaug"
-joint_tag   = f"joint{args.ce_weight}" if args.joint_loss else "nojoint"
-loss_tag    = "softmargin" if args.soft_margin else f"margin{args.margin}"
-jitter_tag  = ""
-if args.jitter_brightness > 0 or args.jitter_contrast > 0:
-    jitter_tag = f"_jit{args.jitter_brightness}c{args.jitter_contrast}"
+def _safe_num(x):
+    """Make a short, filesystem-friendly numeric tag."""
+    s = f"{x:g}"
+    return s.replace("-", "m").replace(".", "p")
 
-file_param_info = (
-    f"{args.model_name}"
-    f"_{args.optimizer}_{args.scheduler}"
-    f"_lr{args.learning_rate}_bs{args.batch_size}"
-    f"_wd{args.weight_decay}_emb{args.embedding_dim}"
-    f"_{loss_tag}_acc{args.accumulation_steps}"
-    f"_pat{args.patience}_maxnorm{args.max_norm}"
-    f"_seed{args.seed}_{aug_str_tag}_{joint_tag}{jitter_tag}"
-)
+
+def _short_model_name(name):
+    """Shorten common model names to keep output filenames readable."""
+    mapping = {
+        "TripletLeNetBatchNormSE": "SE",
+        "TripletLeNetBatchNormSE_Joint": "SEJoint",
+        "TripletLeNetBatchNormSE_Dilated": "SEDilated",
+        "TripletLeNetBatchNormSE_Dilated_Joint": "SEDilatedJoint",
+    }
+    if name in mapping:
+        return mapping[name]
+    # Conservative fallback for other model names.
+    return (name.replace("Triplet", "")
+                .replace("LeNet", "LN")
+                .replace("BatchNorm", "BN"))
+
+
+def _build_short_run_name(args):
+    """Build a concise default filename prefix.
+
+    The output directory already records the full experiment context, so the
+    filename should only contain the important identifiers. Use --run_name to
+    override this completely, e.g. --run_name TJ025.
+    """
+    data_tag = "-".join(args.data_inputs) if args.data_inputs else "data"
+    model_tag = _short_model_name(args.model_name)
+
+    method = []
+    if args.h_flip:
+        method.append("hflip")
+    if args.random_flip:
+        method.append("rflip")
+    if args.anti_diag_flip:
+        method.append("adflip")
+    if args.batch_hard:
+        method.append("batchhard")
+    elif args.semi_hard:
+        method.append("semihard")
+    if args.mask:
+        method.append("mask")
+
+    if args.joint_loss:
+        method.append(f"TJce{_safe_num(args.ce_weight)}")
+    else:
+        method.append("nojoint")
+
+    if args.soft_margin:
+        loss_tag = "softmargin"
+    else:
+        loss_tag = f"m{_safe_num(args.margin)}"
+
+    opt_tag = f"{args.optimizer}-{args.scheduler}"
+    lr_tag = f"lr{_safe_num(args.learning_rate)}"
+    seed_tag = f"s{args.seed}"
+
+    parts = [data_tag, model_tag] + method + [loss_tag, opt_tag, lr_tag, seed_tag]
+    return "_".join(parts)
+
+
+if args.run_name:
+    file_param_info = args.run_name
+else:
+    file_param_info = _build_short_run_name(args)
+
+# All training artifacts use this short prefix:
+#   <prefix>_YYYYMMDD_best.ckpt
+#   <prefix>_history.npz
+#   <prefix>_training_stats.pdf
+#   <prefix>_val_dist_hist.pdf
 base_save_path = os.path.join(args.outpath, file_param_info)
-
+print(f"Output file prefix: {file_param_info}")
 # ---------------------------------------------------------
 # Data Loading
 # ---------------------------------------------------------
