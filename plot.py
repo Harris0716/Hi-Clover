@@ -91,7 +91,7 @@ def main():
                 bins=bins,
                 density=True,
                 color=color_rep,
-                alpha=0.68,
+                alpha=0.5,
                 edgecolor="none",
                 label="Replicates",
             )
@@ -100,7 +100,7 @@ def main():
                 bins=bins,
                 density=True,
                 color=color_cond,
-                alpha=0.68,
+                alpha=0.5,
                 edgecolor="none",
                 label="Conditions",
             )
