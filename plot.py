@@ -126,8 +126,8 @@ def main():
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
 
-    fig.supxlabel("Euclidean distance", fontsize=10.5, y=0.055)
-    fig.supylabel("Probability density", fontsize=10.5, x=0.028)
+    fig.supxlabel("Euclidean Distance", fontsize=10.5, y=0.055)
+    fig.supylabel("Probability Density", fontsize=10.5, x=0.028)
 
     # Row labels placed between the global y-label and panels.
     fig.text(
