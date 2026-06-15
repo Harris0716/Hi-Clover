@@ -2,6 +2,9 @@
 """
 Paper-style multi-dataset training-statistics grid.
 
+V2: the gradient-norm panel uses only the y=1.0 clipping reference line;
+log-ratio has no horizontal reference line, and gradient norm has no best-epoch vertical line.
+
 Expected npz keys from train_0615.py:
   train_losses, val_losses, val_log_ratio_history,
   grad_norm_backbone_history, lr_history,
@@ -180,7 +183,6 @@ def main():
         # 2. Log-ratio
         ax = axes[row_idx, 1]
         ax.plot(epochs, log_ratio, lw=1.35, color=color_metric)
-        ax.axhline(0, color=color_ref, ls="--", lw=0.8, alpha=0.75)
         if args.mark_best:
             ax.axvline(best_epoch, color=color_best, ls="--", lw=0.9, alpha=0.8)
         style_axis(ax)
@@ -189,8 +191,6 @@ def main():
         ax = axes[row_idx, 2]
         ax.plot(epochs, grad_norm, lw=1.35, color=color_metric)
         ax.axhline(args.max_norm, color=color_ref, ls="--", lw=0.8, alpha=0.75)
-        if args.mark_best:
-            ax.axvline(best_epoch, color=color_best, ls="--", lw=0.9, alpha=0.8)
         style_axis(ax)
 
         # 4. Learning rate
@@ -218,7 +218,7 @@ def main():
     ]
     if args.mark_best:
         legend_handles.append(Line2D([0], [0], color=color_best, ls="--", lw=1.0, label="Best validation epoch"))
-    legend_handles.append(Line2D([0], [0], color=color_ref, ls="--", lw=1.0, label="Reference line"))
+    legend_handles.append(Line2D([0], [0], color=color_ref, ls="--", lw=1.0, label=f"Gradient clipping max norm = {args.max_norm:g}"))
 
     fig.legend(
         handles=legend_handles,
