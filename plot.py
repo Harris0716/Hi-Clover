@@ -1,163 +1,167 @@
+import os
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
-# =========================
-# User settings
-# =========================
-data_dir = "0616_dist_pdfs/npz"   # 改成你的 npz 資料夾
-out_path = "combined_distance_distribution_paper.pdf"
 
-# 檔名前綴 vs 圖上顯示名稱
-file_prefixes = ["liver", "NPC", "TCell"]
-display_names = ["Liver", "NPC", "T Cell"]
+def _scalar(x):
+    x = np.asarray(x)
+    return float(x.ravel()[0])
 
-phases = ["train_val", "test"]
-phase_labels = ["Train + Val", "Test"]
 
-# 顏色（沿用你目前這版的風格）
-COLOR_REP = "#9FC3CC"   # replicates
-COLOR_COND = "#7D809E"  # conditions
-COLOR_THR = "black"     # threshold
+def main():
+    parser = argparse.ArgumentParser(description="Plot combined distance distributions for Train+Val and Test.")
+    parser.add_argument("--data_dir", type=str, required=True, help="Directory containing *_raw_dist.npz files.")
+    parser.add_argument("--out", type=str, default="combined_distance_distribution_paper.pdf")
+    parser.add_argument("--dpi", type=int, default=300)
+    parser.add_argument("--xmax", type=float, default=1.8)
+    parser.add_argument("--bins", type=int, default=180)
+    args = parser.parse_args()
 
-# =========================
-# Figure style
-# =========================
-plt.rcParams.update({
-    "font.size": 12,
-    "axes.titlesize": 18,
-    "axes.titleweight": "bold",
-    "axes.labelsize": 14,
-    "xtick.labelsize": 11,
-    "ytick.labelsize": 11,
-    "legend.fontsize": 14,
-    "axes.linewidth": 1.0,
-})
+    # File names and display labels
+    file_prefixes = ["liver", "NPC", "TCell"]
+    display_names = ["Liver", "NPC", "T Cell"]
+    phases = ["train_val", "test"]
+    phase_labels = ["Train + Val", "Test"]
 
-fig, axes = plt.subplots(
-    2, 3,
-    figsize=(15.5, 8.8),
-    sharex=True,
-    sharey="col"
-)
+    # Colors following the original style
+    color_rep = "#9FC3CC"
+    color_cond = "#7D809E"
+    color_thr = "black"
 
-# =========================
-# Plot panels
-# =========================
-for i, phase in enumerate(phases):
-    for j, cell in enumerate(file_prefixes):
-        ax = axes[i, j]
-        file_path = os.path.join(data_dir, f"{cell}_{phase}_raw_dist.npz")
+    # Paper-style typography. Times New Roman will be used if available.
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.serif": ["Times New Roman", "DejaVu Serif"],
+        "mathtext.fontset": "stix",
+        "axes.titlesize": 16,
+        "axes.titleweight": "bold",
+        "axes.labelsize": 14,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 13,
+        "axes.linewidth": 0.9,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
 
-        if not os.path.exists(file_path):
-            ax.text(
-                0.5, 0.5,
-                f"Missing:\n{cell}_{phase}_raw_dist.npz",
-                ha="center", va="center",
-                transform=ax.transAxes,
-                fontsize=12
+    fig, axes = plt.subplots(
+        2, 3,
+        figsize=(14.5, 7.6),
+        sharex=True,
+        sharey="col"
+    )
+
+    x_min, x_max = 0.0, args.xmax
+    bins = np.linspace(x_min, x_max, args.bins)
+
+    for i, phase in enumerate(phases):
+        for j, prefix in enumerate(file_prefixes):
+            ax = axes[i, j]
+            file_path = os.path.join(args.data_dir, f"{prefix}_{phase}_raw_dist.npz")
+
+            if not os.path.exists(file_path):
+                ax.text(
+                    0.5, 0.5,
+                    f"Missing:\n{prefix}_{phase}_raw_dist.npz",
+                    ha="center", va="center",
+                    transform=ax.transAxes,
+                    fontsize=11,
+                )
+                continue
+
+            data = np.load(file_path)
+            dist = data["dist"]
+            lbl = data["lbl"]
+            threshold = _scalar(data["threshold"])
+
+            rep_dist = dist[lbl == 0]
+            cond_dist = dist[lbl == 1]
+
+            ax.hist(
+                rep_dist,
+                bins=bins,
+                density=True,
+                alpha=0.70,
+                color=color_rep,
+                label="Replicates",
             )
-            ax.set_axis_off()
-            continue
+            ax.hist(
+                cond_dist,
+                bins=bins,
+                density=True,
+                alpha=0.70,
+                color=color_cond,
+                label="Conditions",
+            )
+            ax.axvline(
+                threshold,
+                color=color_thr,
+                linestyle="--",
+                linewidth=1.3,
+                label="Decision threshold",
+            )
 
-        data = np.load(file_path)
+            ax.set_xlim(x_min, x_max)
+            ax.tick_params(direction="out", length=3.5, width=0.8)
 
-        dist = data["dist"]
-        lbl = data["lbl"]
-        threshold = data["threshold"]
+            if i == 0:
+                ax.set_title(display_names[j], pad=10)
 
-        # threshold 可能是 scalar，也可能是 shape=(1,)
-        if np.ndim(threshold) > 0:
-            threshold = float(np.ravel(threshold)[0])
-        else:
-            threshold = float(threshold)
+            # Hide top/right spines for a cleaner paper figure
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
 
-        rep_dist = dist[lbl == 0]
-        cond_dist = dist[lbl == 1]
+    # Global axis labels
+    fig.supxlabel("Euclidean distance", fontsize=17, y=0.055)
+    fig.supylabel("Probability density", fontsize=17, x=0.028)
 
-        # bins 設定：
-        # 用資料整體範圍的 99.5 percentile，避免極端尾巴把圖拉太長
-        x_min = max(0.0, np.min(dist))
-        x_max = np.percentile(dist, 99.5)
-        bins = np.linspace(x_min, x_max, 160)
+    # Row labels. Smaller and farther from the y-axis to avoid crowding.
+    fig.text(
+        0.073, 0.645,
+        phase_labels[0],
+        va="center", ha="center",
+        rotation="vertical",
+        fontsize=17,
+        fontweight="bold",
+    )
+    fig.text(
+        0.073, 0.305,
+        phase_labels[1],
+        va="center", ha="center",
+        rotation="vertical",
+        fontsize=17,
+        fontweight="bold",
+    )
 
-        ax.hist(
-            rep_dist,
-            bins=bins,
-            density=True,
-            alpha=0.75,
-            color=COLOR_REP,
-            label="Replicates"
-        )
+    # Single legend above the column titles, with enough gap to avoid overlap.
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    # Normalize legend capitalization
+    labels = ["Replicates", "Conditions", "Decision threshold"]
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.985),
+        ncol=3,
+        frameon=False,
+        handlelength=2.2,
+        columnspacing=2.2,
+    )
 
-        ax.hist(
-            cond_dist,
-            bins=bins,
-            density=True,
-            alpha=0.75,
-            color=COLOR_COND,
-            label="Conditions"
-        )
+    # Spacing: leave separate room for legend, titles, row labels, and global labels.
+    fig.subplots_adjust(
+        left=0.115,
+        right=0.985,
+        top=0.845,
+        bottom=0.135,
+        wspace=0.16,
+        hspace=0.18,
+    )
 
-        ax.axvline(
-            threshold,
-            color=COLOR_THR,
-            linestyle="--",
-            linewidth=1.8,
-            label="Decision Threshold"
-        )
+    fig.savefig(args.out, dpi=args.dpi, bbox_inches="tight")
+    print(f"Saved: {args.out}")
 
-        # 第一列才放資料集標題
-        if i == 0:
-            ax.set_title(display_names[j], pad=14)
 
-        # 只保留左邊與下方刻度，讓版面乾淨一點
-        ax.tick_params(direction="out", length=4, width=1)
-
-# =========================
-# Global labels
-# =========================
-fig.supxlabel("Euclidean Distance", fontsize=24, y=0.04)
-fig.supylabel("Probability Density", fontsize=24, x=0.03)
-
-# 列標籤
-fig.text(
-    0.055, 0.72, phase_labels[0],
-    va="center", ha="center",
-    rotation="vertical",
-    fontsize=24, fontweight="bold"
-)
-fig.text(
-    0.055, 0.28, phase_labels[1],
-    va="center", ha="center",
-    rotation="vertical",
-    fontsize=24, fontweight="bold"
-)
-
-# =========================
-# Global legend
-# =========================
-handles, labels = axes[0, 0].get_legend_handles_labels()
-fig.legend(
-    handles, labels,
-    loc="upper center",
-    bbox_to_anchor=(0.5, 0.995),
-    ncol=3,
-    frameon=False,
-    fontsize=20
-)
-
-# =========================
-# Layout
-# =========================
-plt.subplots_adjust(
-    left=0.09,
-    right=0.99,
-    top=0.90,
-    bottom=0.12,
-    wspace=0.15,
-    hspace=0.08
-)
-
-plt.savefig(out_path, dpi=300, bbox_inches="tight")
-plt.show()
+if __name__ == "__main__":
+    main()
