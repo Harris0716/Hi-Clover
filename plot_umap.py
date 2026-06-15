@@ -8,10 +8,12 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 import umap
 
 from HiSiNet.HiCDatasetClass import HiCDatasetDec
 import HiSiNet.models as models
+
 
 DATASET_KEYS = ["liver", "NPC", "TCell"]
 DISPLAY_NAMES = {
@@ -100,6 +102,7 @@ def sample_embeddings_for_paths(model, paths, device, total_samples=5000, batch_
 
                 embs.append(emb[:n])
                 for cid in class_ids[:n]:
+                    # class_id == 1 -> labels 1/2; otherwise -> labels 3/4
                     if int(cid) == 1:
                         labels.append(2 if is_r2 else 1)
                     else:
@@ -139,7 +142,7 @@ def plot_one_panel(ax, coords, labels, legend_labels, title=None, point_size=4.0
         handles.append(h)
 
     if title:
-        ax.set_title(title, fontweight="bold", pad=9)
+        ax.set_title(title, fontweight="bold", pad=8)
 
     ax.set_xticks([])
     ax.set_yticks([])
@@ -158,7 +161,7 @@ def main():
     parser.add_argument("--model_name", default="TripletLeNetBatchNormSE")
     parser.add_argument("--ckpt", action="append", required=True,
                         help="Checkpoint mapping, e.g. --ckpt liver=outputs/liver/best.ckpt")
-    parser.add_argument("--out", default="combined_umap_paper_v2.pdf")
+    parser.add_argument("--out", default="combined_umap_paper_v3.pdf")
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--mask", action="store_true")
     parser.add_argument("--total_samples", type=int, default=5000)
@@ -189,15 +192,25 @@ def main():
         "font.size": 8.5,
         "axes.titlesize": 11.0,
         "axes.labelsize": 10.0,
-        "xtick.labelsize": 7.8,
-        "ytick.labelsize": 7.8,
-        "legend.fontsize": 6.5,
+        "legend.fontsize": 6.1,
         "axes.linewidth": 0.8,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
 
-    fig, axes = plt.subplots(2, 3, figsize=(9.4, 6.1))
+    fig = plt.figure(figsize=(9.4, 6.0))
+    gs = GridSpec(
+        3, 3,
+        figure=fig,
+        height_ratios=[1.0, 1.0, 0.30],
+        wspace=0.14,
+        hspace=0.13,
+    )
+
+    axes = [[fig.add_subplot(gs[r, c]) for c in range(3)] for r in range(2)]
+    legend_axes = [fig.add_subplot(gs[2, c]) for c in range(3)]
+    for lax in legend_axes:
+        lax.axis("off")
 
     saved_data = {}
     subsets = ["train_val", "test"]
@@ -228,7 +241,7 @@ def main():
 
             title = DISPLAY_NAMES[key] if row == 0 else None
             handles = plot_one_panel(
-                axes[row, col], coords, labels, LEGENDS[key],
+                axes[row][col], coords, labels, LEGENDS[key],
                 title=title, point_size=args.point_size, alpha=args.alpha,
             )
             if row == 0:
@@ -237,41 +250,36 @@ def main():
             saved_data[f"{key}_{subset}_coords"] = coords
             saved_data[f"{key}_{subset}_labels"] = labels
 
-    fig.supxlabel("UMAP Dimension 1", fontsize=10.8, y=0.06)
-    fig.supylabel("UMAP Dimension 2", fontsize=10.8, x=0.03)
-
-    fig.text(0.060, 0.635, row_labels[0], va="center", ha="center", rotation="vertical", fontsize=10.0, fontweight="bold")
-    fig.text(0.060, 0.245, row_labels[1], va="center", ha="center", rotation="vertical", fontsize=10.0, fontweight="bold")
-
-    # One shared legend per dataset column, placed below the bottom panel.
-    # This avoids covering points and removes duplicated legends.
-    legend_x = {0: 0.19, 1: 0.50, 2: 0.81}
+    # Column-wise legends in dedicated legend row.
     for col, key in enumerate(DATASET_KEYS):
-        fig.legend(
+        legend_axes[col].legend(
             handles=col_legend_handles[key],
             labels=LEGENDS[key],
             title="Sample ID",
-            loc="lower center",
-            bbox_to_anchor=(legend_x[col], 0.005),
-            ncol=1,
-            frameon=True,
-            framealpha=0.95,
-            borderpad=0.35,
+            loc="center",
+            ncol=2,
+            frameon=False,
             handletextpad=0.35,
-            columnspacing=0.8,
-            labelspacing=0.30,
-            fontsize=6.1,
-            title_fontsize=6.4,
+            columnspacing=0.75,
+            labelspacing=0.35,
+            fontsize=6.2,
+            title_fontsize=6.6,
             markerscale=1.8,
         )
+
+    fig.supxlabel("UMAP Dimension 1", fontsize=10.8, y=0.035)
+    fig.supylabel("UMAP Dimension 2", fontsize=10.8, x=0.030)
+
+    fig.text(0.060, 0.645, row_labels[0], va="center", ha="center",
+             rotation="vertical", fontsize=10.0, fontweight="bold")
+    fig.text(0.060, 0.320, row_labels[1], va="center", ha="center",
+             rotation="vertical", fontsize=10.0, fontweight="bold")
 
     plt.subplots_adjust(
         left=0.10,
         right=0.985,
-        top=0.88,
-        bottom=0.20,
-        wspace=0.14,
-        hspace=0.10,
+        top=0.90,
+        bottom=0.12,
     )
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
