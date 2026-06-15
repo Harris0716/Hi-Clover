@@ -35,8 +35,8 @@ def main():
         "TCell": (0.0, 1.25),
     }
 
-    color_rep = "#4F9AA6"
-    color_cond = "#4F526D"
+    color_rep = "#108690"
+    color_cond = "#1D1E4E"
     color_thr = "#111111"
 
     plt.rcParams.update({
