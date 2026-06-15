@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 
 
 def load_threshold(value):
@@ -17,9 +18,8 @@ def main():
         description="Create a publication-style 2x3 distance distribution figure."
     )
     parser.add_argument("--data_dir", required=True, help="Directory containing *_raw_dist.npz files")
-    parser.add_argument("--out", default="combined_distance_distribution_paper_v2.pdf", help="Output file path")
-    parser.add_argument("--bins", type=int, default=180, help="Number of histogram bins")
-    parser.add_argument("--xmax", type=float, default=1.85, help="Shared x-axis upper limit")
+    parser.add_argument("--out", default="combined_distance_distribution_paper_v3.pdf", help="Output file path")
+    parser.add_argument("--bins", type=int, default=170, help="Number of histogram bins per panel")
     parser.add_argument("--dpi", type=int, default=300, help="Output dpi")
     args = parser.parse_args()
 
@@ -28,33 +28,38 @@ def main():
     phases = ["train_val", "test"]
     phase_labels = ["Train + Val", "Test"]
 
-    # Keep the original color identity, but use restrained opacity.
+    # Per-dataset x limits. T Cell is intentionally shorter to avoid empty space.
+    xlims = {
+        "liver": (0.0, 1.60),
+        "NPC": (0.0, 1.80),
+        "TCell": (0.0, 1.25),
+    }
+
     color_rep = "#9FC3CC"
     color_cond = "#7D809E"
     color_thr = "#111111"
 
-    # A cleaner, journal-style matplotlib setup.
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 9,
-        "axes.titlesize": 11,
-        "axes.labelsize": 10,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "legend.fontsize": 9,
-        "axes.linewidth": 0.8,
-        "xtick.major.width": 0.8,
-        "ytick.major.width": 0.8,
-        "xtick.major.size": 3.2,
-        "ytick.major.size": 3.2,
+        "font.size": 8.5,
+        "axes.titlesize": 10.5,
+        "axes.labelsize": 9.5,
+        "xtick.labelsize": 7.8,
+        "ytick.labelsize": 7.8,
+        "legend.fontsize": 8.8,
+        "axes.linewidth": 0.75,
+        "xtick.major.width": 0.75,
+        "ytick.major.width": 0.75,
+        "xtick.major.size": 3.0,
+        "ytick.major.size": 3.0,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
 
     fig, axes = plt.subplots(
         2, 3,
-        figsize=(9.4, 5.5),
-        sharex=True,
+        figsize=(9.2, 5.25),
+        sharex=False,
         sharey="col"
     )
 
@@ -62,6 +67,7 @@ def main():
         for j, prefix in enumerate(file_prefixes):
             ax = axes[i, j]
             path = os.path.join(args.data_dir, f"{prefix}_{phase}_raw_dist.npz")
+            xmin, xmax = xlims[prefix]
 
             if not os.path.exists(path):
                 ax.text(
@@ -71,7 +77,7 @@ def main():
                     transform=ax.transAxes,
                     fontsize=8,
                 )
-                ax.set_xlim(0, args.xmax)
+                ax.set_xlim(xmin, xmax)
                 continue
 
             data = np.load(path)
@@ -79,13 +85,13 @@ def main():
             lbl = data["lbl"]
             threshold = load_threshold(data["threshold"])
 
-            bins = np.linspace(0, args.xmax, args.bins)
+            bins = np.linspace(xmin, xmax, args.bins)
             ax.hist(
                 dist[lbl == 0],
                 bins=bins,
                 density=True,
                 color=color_rep,
-                alpha=0.65,
+                alpha=0.68,
                 edgecolor="none",
                 label="Replicates",
             )
@@ -94,7 +100,7 @@ def main():
                 bins=bins,
                 density=True,
                 color=color_cond,
-                alpha=0.65,
+                alpha=0.68,
                 edgecolor="none",
                 label="Conditions",
             )
@@ -106,43 +112,44 @@ def main():
                 label="Decision threshold",
             )
 
-            ax.set_xlim(0, args.xmax)
+            ax.set_xlim(xmin, xmax)
             ax.grid(False)
             ax.tick_params(direction="out")
+            ax.xaxis.set_major_locator(MultipleLocator(0.25))
+            ax.xaxis.set_major_formatter(FormatStrFormatter("%.2f"))
 
-            # Column titles only once, with controlled spacing.
             if i == 0:
                 ax.set_title(display_names[j], fontweight="bold", pad=7)
-
-            # Remove repeated x tick labels from the top row.
-            if i == 0:
                 ax.tick_params(labelbottom=False)
 
-    # Common labels: modest size, outside the panel area.
-    fig.supxlabel("Euclidean distance", fontsize=11, y=0.055)
-    fig.supylabel("Probability density", fontsize=11, x=0.028)
+            # Keep panels clean.
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
 
-    # Row labels: placed separately from the y-axis label, not oversized.
+    fig.supxlabel("Euclidean distance", fontsize=10.5, y=0.055)
+    fig.supylabel("Probability density", fontsize=10.5, x=0.028)
+
+    # Row labels placed between the global y-label and panels.
     fig.text(
-        0.058, 0.635,
+        0.063, 0.635,
         phase_labels[0],
         va="center", ha="center",
         rotation="vertical",
-        fontsize=10,
+        fontsize=9.8,
         fontweight="bold",
     )
     fig.text(
-        0.058, 0.245,
+        0.063, 0.245,
         phase_labels[1],
         va="center", ha="center",
         rotation="vertical",
-        fontsize=10,
+        fontsize=9.8,
         fontweight="bold",
     )
 
     legend_handles = [
-        Patch(facecolor=color_rep, edgecolor="none", alpha=0.65, label="Replicates"),
-        Patch(facecolor=color_cond, edgecolor="none", alpha=0.65, label="Conditions"),
+        Patch(facecolor=color_rep, edgecolor="none", alpha=0.68, label="Replicates"),
+        Patch(facecolor=color_cond, edgecolor="none", alpha=0.68, label="Conditions"),
         Line2D([0], [0], color=color_thr, linestyle="--", linewidth=1.0, label="Decision threshold"),
     ]
     fig.legend(
@@ -151,18 +158,17 @@ def main():
         bbox_to_anchor=(0.5, 0.985),
         ncol=3,
         frameon=False,
-        columnspacing=1.8,
+        columnspacing=1.6,
         handlelength=2.0,
     )
 
-    # More conservative layout: legend has its own space, labels don't collide.
     plt.subplots_adjust(
         left=0.105,
         right=0.985,
-        top=0.86,
+        top=0.855,
         bottom=0.13,
-        wspace=0.22,
-        hspace=0.10,
+        wspace=0.20,
+        hspace=0.12,
     )
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
