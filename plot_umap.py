@@ -161,7 +161,7 @@ def main():
     parser.add_argument("--model_name", default="TripletLeNetBatchNormSE")
     parser.add_argument("--ckpt", action="append", required=True,
                         help="Checkpoint mapping, e.g. --ckpt liver=outputs/liver/best.ckpt")
-    parser.add_argument("--out", default="combined_umap_paper_v4.pdf")
+    parser.add_argument("--out", default="combined_umap_paper_v5.pdf")
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--mask", action="store_true")
     parser.add_argument("--total_samples", type=int, default=5000)
@@ -198,17 +198,17 @@ def main():
         "ps.fonttype": 42,
     })
 
-    fig = plt.figure(figsize=(9.4, 5.65))
+    fig = plt.figure(figsize=(9.4, 5.85))
     gs = GridSpec(
         3, 3,
         figure=fig,
-        height_ratios=[1.0, 1.0, 0.22],
+        height_ratios=[1.0, 1.0, 0.20],
         left=0.10,
         right=0.985,
         top=0.90,
-        bottom=0.08,
+        bottom=0.14,
         wspace=0.14,
-        hspace=0.12,
+        hspace=0.10,
     )
 
     axes = [[fig.add_subplot(gs[r, c]) for c in range(3)] for r in range(2)]
@@ -264,14 +264,15 @@ def main():
             ncol=2,
             frameon=False,
             handletextpad=0.35,
-            columnspacing=0.65,
-            labelspacing=0.28,
-            fontsize=5.9,
-            title_fontsize=6.3,
+            columnspacing=0.58,
+            labelspacing=0.24,
+            fontsize=5.7,
+            title_fontsize=6.1,
             markerscale=1.75,
         )
 
     # Dynamically place row labels and global axis labels based on panel positions.
+    # The x-axis label is placed below the legend row so it does not touch the bottom panels.
     fig.canvas.draw()
     pos_top = axes[0][0].get_position()
     pos_bottom = axes[1][0].get_position()
@@ -279,7 +280,7 @@ def main():
 
     y_train = (pos_top.y0 + pos_top.y1) / 2
     y_test = (pos_bottom.y0 + pos_bottom.y1) / 2
-    y_xlabel = (pos_bottom.y0 + pos_legend.y1) / 2
+    y_xlabel = max(0.035, pos_legend.y0 - 0.035)
 
     fig.text(0.50, y_xlabel, "UMAP Dimension 1", ha="center", va="center", fontsize=10.8)
     fig.text(0.030, (pos_bottom.y0 + pos_top.y1) / 2, "UMAP Dimension 2",
