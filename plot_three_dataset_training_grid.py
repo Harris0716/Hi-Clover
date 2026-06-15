@@ -125,7 +125,7 @@ def main():
     color_val = "#ff7f0e"     # orange
     color_log = "#0000ff"     # blue, as in the original log-ratio panel
     color_grad = "#008080"    # teal, as in the original gradient-norm panel
-    color_lr = "#ff7f0e"      # orange, as in the original learning-rate panel
+    color_lr = "#6A3D9A"      # orange, as in the original learning-rate panel
     color_ref = "#ff0000"     # red dashed reference line for grad clipping
     color_best = "0.45"       # gray dashed line for best validation epoch
 
