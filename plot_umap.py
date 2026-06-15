@@ -102,7 +102,7 @@ def sample_embeddings_for_paths(model, paths, device, total_samples=5000, batch_
 
                 embs.append(emb[:n])
                 for cid in class_ids[:n]:
-                    # class_id == 1 -> labels 1/2; otherwise -> labels 3/4
+                    # class_id == 1 -> labels 1/2; otherwise -> labels 3/4.
                     if int(cid) == 1:
                         labels.append(2 if is_r2 else 1)
                     else:
@@ -161,7 +161,7 @@ def main():
     parser.add_argument("--model_name", default="TripletLeNetBatchNormSE")
     parser.add_argument("--ckpt", action="append", required=True,
                         help="Checkpoint mapping, e.g. --ckpt liver=outputs/liver/best.ckpt")
-    parser.add_argument("--out", default="combined_umap_paper_v3.pdf")
+    parser.add_argument("--out", default="combined_umap_paper_v4.pdf")
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--mask", action="store_true")
     parser.add_argument("--total_samples", type=int, default=5000)
@@ -192,19 +192,23 @@ def main():
         "font.size": 8.5,
         "axes.titlesize": 11.0,
         "axes.labelsize": 10.0,
-        "legend.fontsize": 6.1,
+        "legend.fontsize": 5.9,
         "axes.linewidth": 0.8,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
 
-    fig = plt.figure(figsize=(9.4, 6.0))
+    fig = plt.figure(figsize=(9.4, 5.65))
     gs = GridSpec(
         3, 3,
         figure=fig,
-        height_ratios=[1.0, 1.0, 0.30],
+        height_ratios=[1.0, 1.0, 0.22],
+        left=0.10,
+        right=0.985,
+        top=0.90,
+        bottom=0.08,
         wspace=0.14,
-        hspace=0.13,
+        hspace=0.12,
     )
 
     axes = [[fig.add_subplot(gs[r, c]) for c in range(3)] for r in range(2)]
@@ -250,7 +254,7 @@ def main():
             saved_data[f"{key}_{subset}_coords"] = coords
             saved_data[f"{key}_{subset}_labels"] = labels
 
-    # Column-wise legends in dedicated legend row.
+    # Dedicated, compact legends below each column.
     for col, key in enumerate(DATASET_KEYS):
         legend_axes[col].legend(
             handles=col_legend_handles[key],
@@ -260,27 +264,31 @@ def main():
             ncol=2,
             frameon=False,
             handletextpad=0.35,
-            columnspacing=0.75,
-            labelspacing=0.35,
-            fontsize=6.2,
-            title_fontsize=6.6,
-            markerscale=1.8,
+            columnspacing=0.65,
+            labelspacing=0.28,
+            fontsize=5.9,
+            title_fontsize=6.3,
+            markerscale=1.75,
         )
 
-    fig.supxlabel("UMAP Dimension 1", fontsize=10.8, y=0.035)
-    fig.supylabel("UMAP Dimension 2", fontsize=10.8, x=0.030)
+    # Dynamically place row labels and global axis labels based on panel positions.
+    fig.canvas.draw()
+    pos_top = axes[0][0].get_position()
+    pos_bottom = axes[1][0].get_position()
+    pos_legend = legend_axes[1].get_position()
 
-    fig.text(0.060, 0.645, row_labels[0], va="center", ha="center",
-             rotation="vertical", fontsize=10.0, fontweight="bold")
-    fig.text(0.060, 0.320, row_labels[1], va="center", ha="center",
-             rotation="vertical", fontsize=10.0, fontweight="bold")
+    y_train = (pos_top.y0 + pos_top.y1) / 2
+    y_test = (pos_bottom.y0 + pos_bottom.y1) / 2
+    y_xlabel = (pos_bottom.y0 + pos_legend.y1) / 2
 
-    plt.subplots_adjust(
-        left=0.10,
-        right=0.985,
-        top=0.90,
-        bottom=0.12,
-    )
+    fig.text(0.50, y_xlabel, "UMAP Dimension 1", ha="center", va="center", fontsize=10.8)
+    fig.text(0.030, (pos_bottom.y0 + pos_top.y1) / 2, "UMAP Dimension 2",
+             ha="center", va="center", rotation="vertical", fontsize=10.8)
+
+    fig.text(0.060, y_train, row_labels[0], va="center", ha="center",
+             rotation="vertical", fontsize=10.0, fontweight="bold")
+    fig.text(0.060, y_test, row_labels[1], va="center", ha="center",
+             rotation="vertical", fontsize=10.0, fontweight="bold")
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
     if out_dir:
