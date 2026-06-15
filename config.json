@@ -1,5 +1,5 @@
 {
-    "liver": {
+    "Liver": {
         "reference": "mm9",
         "training": [
             "/work/u1696810/liver_data/TAM_R1.mlhic",
