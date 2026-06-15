@@ -2,8 +2,9 @@
 """
 Paper-style multi-dataset training-statistics grid.
 
-V2: the gradient-norm panel uses only the y=1.0 clipping reference line;
-log-ratio has no horizontal reference line, and gradient norm has no best-epoch vertical line.
+V3: same paper-style layout as V2, but follows the original color scheme:
+train=blue, validation=orange, log-ratio=blue, gradient norm=teal, learning rate=orange,
+best epoch=gray dashed, gradient clipping reference=red dashed.
 
 Expected npz keys from train_0615.py:
   train_losses, val_losses, val_log_ratio_history,
@@ -11,11 +12,11 @@ Expected npz keys from train_0615.py:
   optional: best_epoch, best_val_loss
 
 Example:
-  python plot_three_dataset_training_grid_paper.py \
+  python plot_three_dataset_training_grid_paper_v3_original_colors.py \
     --npz "Liver=outputs/liver_B_new/liver_B_new_history.npz" \
     --npz "NPC=outputs/NPC_B_new/NPC_B_new_history.npz" \
     --npz "T Cell=outputs/TCell_B_new/TCell_B_new_history.npz" \
-    --out B_three_dataset_training_stats_paper.pdf \
+    --out B_three_dataset_training_stats_paper_v3.pdf \
     --mark_best \
     --lr_log
 """
@@ -119,11 +120,14 @@ def main():
         "Learning rate",
     ]
 
-    color_train = "#1f77b4"
-    color_val = "#ff7f0e"
-    color_metric = "#2c7fb8"
-    color_ref = "0.45"
-    color_best = "0.35"
+    # Original color scheme
+    color_train = "#1f77b4"   # blue
+    color_val = "#ff7f0e"     # orange
+    color_log = "#0000ff"     # blue, as in the original log-ratio panel
+    color_grad = "#008080"    # teal, as in the original gradient-norm panel
+    color_lr = "#ff7f0e"      # orange, as in the original learning-rate panel
+    color_ref = "#ff0000"     # red dashed reference line for grad clipping
+    color_best = "0.45"       # gray dashed line for best validation epoch
 
     for row_idx, (label, npz_path) in enumerate(labeled_paths):
         if not npz_path.exists():
@@ -182,20 +186,20 @@ def main():
 
         # 2. Log-ratio
         ax = axes[row_idx, 1]
-        ax.plot(epochs, log_ratio, lw=1.35, color=color_metric)
+        ax.plot(epochs, log_ratio, lw=1.35, color=color_log)
         if args.mark_best:
             ax.axvline(best_epoch, color=color_best, ls="--", lw=0.9, alpha=0.8)
         style_axis(ax)
 
         # 3. Gradient norm
         ax = axes[row_idx, 2]
-        ax.plot(epochs, grad_norm, lw=1.35, color=color_metric)
+        ax.plot(epochs, grad_norm, lw=1.35, color=color_grad)
         ax.axhline(args.max_norm, color=color_ref, ls="--", lw=0.8, alpha=0.75)
         style_axis(ax)
 
         # 4. Learning rate
         ax = axes[row_idx, 3]
-        ax.plot(epochs, lr_history, lw=1.35, color=color_metric)
+        ax.plot(epochs, lr_history, lw=1.35, color=color_lr)
         if args.lr_log and np.all(lr_history > 0):
             ax.set_yscale("log")
             ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=4))
