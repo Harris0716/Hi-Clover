@@ -2,9 +2,9 @@
 """
 Paper-style multi-dataset training-statistics grid.
 
-V3: same paper-style layout as V2, but follows the original color scheme:
-train=blue, validation=orange, log-ratio=blue, gradient norm=teal, learning rate=orange,
-best epoch=gray dashed, gradient clipping reference=red dashed.
+V4: paper-style layout with mostly original colors, but learning rate uses a muted purple
+to distinguish it from validation loss. Log-ratio and gradient-norm panels use fixed
+y-limits for cleaner cross-dataset comparison. Dataset labels are normalized for display.
 
 Expected npz keys from train_0615.py:
   train_losses, val_losses, val_log_ratio_history,
@@ -12,11 +12,11 @@ Expected npz keys from train_0615.py:
   optional: best_epoch, best_val_loss
 
 Example:
-  python plot_three_dataset_training_grid_paper_v3_original_colors.py \
+  python plot_three_dataset_training_grid_paper_v4.py \
     --npz "Liver=outputs/liver_B_new/liver_B_new_history.npz" \
     --npz "NPC=outputs/NPC_B_new/NPC_B_new_history.npz" \
     --npz "T Cell=outputs/TCell_B_new/TCell_B_new_history.npz" \
-    --out B_three_dataset_training_stats_paper_v3.pdf \
+    --out B_three_dataset_training_stats_paper_v4.pdf \
     --mark_best \
     --lr_log
 """
@@ -41,12 +41,25 @@ def read_array(hist, key, default=None):
     raise KeyError(f"Missing key '{key}' in npz. Available keys: {hist.files}")
 
 
+
+def normalize_display_label(label):
+    """Normalize common dataset labels for paper figures."""
+    clean = label.strip()
+    low = clean.lower().replace("_", " ").replace("-", " ")
+    if low == "liver":
+        return "Liver"
+    if low == "npc":
+        return "NPC"
+    if low in {"tcell", "t cell", "t-cell"}:
+        return "T Cell"
+    return clean
+
 def parse_labeled_npz(item):
     if "=" not in item:
         path = Path(item)
-        return path.stem.replace("_history", ""), path
+        return normalize_display_label(path.stem.replace("_history", "")), path
     label, path = item.split("=", 1)
-    return label.strip(), Path(path.strip())
+    return normalize_display_label(label), Path(path.strip())
 
 
 def align_epochs(*arrays):
@@ -90,6 +103,12 @@ def main():
     parser.add_argument("--annotate_best", action="store_true",
                         help="Write best epoch and best val loss in the loss panel.")
     parser.add_argument("--lr_log", action="store_true", help="Use log scale for learning rate axis.")
+    parser.add_argument("--log_ratio_ylim", type=float, nargs=2, default=(0.0, 0.9),
+                        metavar=("YMIN", "YMAX"),
+                        help="Shared y-axis limit for all log-ratio panels. Use 'none' by editing if not needed.")
+    parser.add_argument("--grad_norm_ylim", type=float, nargs=2, default=(0.0, 1.6),
+                        metavar=("YMIN", "YMAX"),
+                        help="Shared y-axis limit for all gradient-norm panels.")
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
 
@@ -125,7 +144,7 @@ def main():
     color_val = "#ff7f0e"     # orange
     color_log = "#0000ff"     # blue, as in the original log-ratio panel
     color_grad = "#008080"    # teal, as in the original gradient-norm panel
-    color_lr = "#6A3D9A"      # orange, as in the original learning-rate panel
+    color_lr = "#6A3D9A"      # muted purple, separated from validation orange
     color_ref = "#ff0000"     # red dashed reference line for grad clipping
     color_best = "0.45"       # gray dashed line for best validation epoch
 
@@ -189,12 +208,16 @@ def main():
         ax.plot(epochs, log_ratio, lw=1.35, color=color_log)
         if args.mark_best:
             ax.axvline(best_epoch, color=color_best, ls="--", lw=0.9, alpha=0.8)
+        if args.log_ratio_ylim is not None:
+            ax.set_ylim(args.log_ratio_ylim[0], args.log_ratio_ylim[1])
         style_axis(ax)
 
         # 3. Gradient norm
         ax = axes[row_idx, 2]
         ax.plot(epochs, grad_norm, lw=1.35, color=color_grad)
-        ax.axhline(args.max_norm, color=color_ref, ls="--", lw=0.8, alpha=0.75)
+        ax.axhline(args.max_norm, color=color_ref, ls="--", lw=0.8, alpha=0.55)
+        if args.grad_norm_ylim is not None:
+            ax.set_ylim(args.grad_norm_ylim[0], args.grad_norm_ylim[1])
         style_axis(ax)
 
         # 4. Learning rate
