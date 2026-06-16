@@ -8,19 +8,59 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 
 
-def load_threshold(value):
-    value = np.asarray(value)
-    return float(value.reshape(-1)[0])
+def load_raw_dist(path):
+    data = np.load(path)
+    return data["dist"], data["lbl"]
+
+
+def compute_best_mean_threshold(dist, lbl, steps=5000):
+    """
+    Select threshold using Train+Val only.
+
+    Label convention:
+      lbl == 0: replicate pair
+      lbl == 1: condition pair
+
+    Prediction rule:
+      distance < threshold  -> replicate
+      distance >= threshold -> condition
+
+    The selected threshold maximizes:
+      mean_perf = (replicate_accuracy + condition_accuracy) / 2
+    """
+    dist = np.asarray(dist).reshape(-1)
+    lbl = np.asarray(lbl).reshape(-1)
+
+    rep_dist = dist[lbl == 0]
+    cond_dist = dist[lbl == 1]
+
+    if len(rep_dist) == 0 or len(cond_dist) == 0:
+        raise ValueError("Both replicate and condition distances are required to compute threshold.")
+
+    d_min = float(np.min(dist))
+    d_max = float(np.max(dist))
+
+    # Include a small margin so thresholds at both extremes can be considered.
+    eps = max((d_max - d_min) * 1e-6, 1e-8)
+    candidates = np.linspace(d_min - eps, d_max + eps, steps)
+
+    rep_acc = (rep_dist[:, None] < candidates[None, :]).mean(axis=0)
+    cond_acc = (cond_dist[:, None] >= candidates[None, :]).mean(axis=0)
+    mean_perf = (rep_acc + cond_acc) / 2.0
+
+    best_idx = int(np.argmax(mean_perf))
+    return float(candidates[best_idx]), float(rep_acc[best_idx]), float(cond_acc[best_idx]), float(mean_perf[best_idx])
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a publication-style 2x3 distance distribution figure."
+        description="Create a publication-style 2x3 distance distribution figure using Train+Val best-mean threshold calibration."
     )
     parser.add_argument("--data_dir", required=True, help="Directory containing *_raw_dist.npz files")
-    parser.add_argument("--out", default="combined_distance_distribution_paper_v3.pdf", help="Output file path")
+    parser.add_argument("--out", default="combined_distance_distribution_paper_v4_best_mean.pdf", help="Output file path")
     parser.add_argument("--bins", type=int, default=170, help="Number of histogram bins per panel")
     parser.add_argument("--dpi", type=int, default=300, help="Output dpi")
+    parser.add_argument("--threshold_steps", type=int, default=5000, help="Number of candidate thresholds scanned on Train+Val")
     args = parser.parse_args()
 
     file_prefixes = ["liver", "NPC", "TCell"]
@@ -56,6 +96,29 @@ def main():
         "ps.fonttype": 42,
     })
 
+    # Recompute one threshold per dataset from Train+Val only.
+    # This ignores the old threshold stored in *_raw_dist.npz.
+    thresholds = {}
+    print("Threshold calibration method: best mean performance on Train+Val only")
+    for prefix in file_prefixes:
+        train_val_path = os.path.join(args.data_dir, f"{prefix}_train_val_raw_dist.npz")
+        if not os.path.exists(train_val_path):
+            print(f"[Warning] Missing Train+Val file for threshold calibration: {train_val_path}")
+            thresholds[prefix] = None
+            continue
+
+        train_val_dist, train_val_lbl = load_raw_dist(train_val_path)
+        threshold, rep_acc, cond_acc, mean_perf = compute_best_mean_threshold(
+            train_val_dist,
+            train_val_lbl,
+            steps=args.threshold_steps,
+        )
+        thresholds[prefix] = threshold
+        print(
+            f"  {prefix}: threshold={threshold:.4f}, "
+            f"Train+Val Rep={rep_acc:.4f}, Cond={cond_acc:.4f}, Mean={mean_perf:.4f}"
+        )
+
     fig, axes = plt.subplots(
         2, 3,
         figsize=(9.2, 5.25),
@@ -80,10 +143,8 @@ def main():
                 ax.set_xlim(xmin, xmax)
                 continue
 
-            data = np.load(path)
-            dist = data["dist"]
-            lbl = data["lbl"]
-            threshold = load_threshold(data["threshold"])
+            dist, lbl = load_raw_dist(path)
+            threshold = thresholds[prefix]
 
             bins = np.linspace(xmin, xmax, args.bins)
             ax.hist(
@@ -104,13 +165,15 @@ def main():
                 edgecolor="none",
                 label="Conditions",
             )
-            ax.axvline(
-                threshold,
-                color=color_thr,
-                linestyle="--",
-                linewidth=1.0,
-                label="Decision threshold",
-            )
+
+            if threshold is not None:
+                ax.axvline(
+                    threshold,
+                    color=color_thr,
+                    linestyle="--",
+                    linewidth=1.0,
+                    label="Decision Threshold",
+                )
 
             ax.set_xlim(xmin, xmax)
             ax.grid(False)
@@ -148,9 +211,9 @@ def main():
     )
 
     legend_handles = [
-        Patch(facecolor=color_rep, edgecolor="none", alpha=0.68, label="Replicates"),
-        Patch(facecolor=color_cond, edgecolor="none", alpha=0.68, label="Conditions"),
-        Line2D([0], [0], color=color_thr, linestyle="--", linewidth=1.0, label="Decision threshold"),
+        Patch(facecolor=color_rep, edgecolor="none", alpha=0.5, label="Replicates"),
+        Patch(facecolor=color_cond, edgecolor="none", alpha=0.5, label="Conditions"),
+        Line2D([0], [0], color=color_thr, linestyle="--", linewidth=1.0, label="Decision Threshold"),
     ]
     fig.legend(
         handles=legend_handles,
