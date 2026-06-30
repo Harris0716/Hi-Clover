@@ -22,7 +22,7 @@
     },
 
     "NPC": {
-        "reference": "mm9",
+        "reference": "mm10",
         "training": [
             "/work/u1696810/NPC_data/d4auxrep1_10kb.mlhic",
             "/work/u1696810/NPC_data/d4auxrep2_10kb.mlhic",
@@ -43,7 +43,7 @@
         ]
     },
     "TCell": {
-        "reference": "mm10",
+        "reference": "mm9",
         "training": [
             "/work/u1696810/tcell_data/CD69negDPWTR1.mlhic",
             "/work/u1696810/tcell_data/CD69negDPWTR2.mlhic",
