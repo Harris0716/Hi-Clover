@@ -31,7 +31,7 @@ parser.add_argument('--threshold_method', type=str, default='best_mean',
                     choices=['best_mean', 'intersection'],
                     help='Threshold calibration method. best_mean maximizes balanced mean performance on threshold_data; intersection uses the first histogram intersection.')
 parser.add_argument("data_inputs", nargs='+')
-parser.add_argument('--embedding_dim', type=int, default=512, help='Embedding dimension')
+parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension')
 args = parser.parse_args()
 
 def test_triplet(model, dataloader, device):
