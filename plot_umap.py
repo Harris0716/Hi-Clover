@@ -44,6 +44,28 @@ LEGENDS = {
     ],
 }
 
+# Shorter labels for the right-side legend.
+RIGHT_LEGENDS = {
+    "Liver": [
+        "NIPBL R1",
+        "NIPBL R2",
+        "TAM R1",
+        "TAM R2",
+    ],
+    "NPC": [
+        "Ctrl R1",
+        "Ctrl R2",
+        "Aux R1",
+        "Aux R2",
+    ],
+    "TCell": [
+        "DP R1",
+        "DP R2",
+        "SP R1",
+        "SP R2",
+    ],
+}
+
 UMAP_COLORS = ["#1F77B4", "#AEC7E8", "#D62728", "#FF9896"]
 
 
@@ -216,9 +238,74 @@ def plot_one_panel(
     return handles
 
 
+def add_right_legend(legend_ax, col_legend_handles):
+    legend_ax.axis("off")
+
+    legend_ax.text(
+        0.00,
+        0.98,
+        "Sample ID",
+        fontsize=15,
+        fontweight="bold",
+        va="top",
+    )
+
+    y = 0.88
+
+    for key in DATASET_KEYS:
+        legend_ax.text(
+            0.00,
+            y,
+            DISPLAY_NAMES[key],
+            fontsize=13.2,
+            fontweight="bold",
+            va="top",
+        )
+
+        y -= 0.075
+
+        handles = col_legend_handles[key]
+        labels = RIGHT_LEGENDS[key]
+
+        # Arrange four samples as two rows and two columns:
+        # left column: class/condition 1 R1/R2
+        # right column: class/condition 2 R1/R2
+        positions = [
+            (0.04, y, handles[0], labels[0]),
+            (0.50, y, handles[2], labels[2]),
+            (0.04, y - 0.065, handles[1], labels[1]),
+            (0.50, y - 0.065, handles[3], labels[3]),
+        ]
+
+        for x, yy, h, label in positions:
+            color = h.get_facecolor()[0]
+
+            legend_ax.scatter(
+                x,
+                yy,
+                s=64,
+                color=color,
+                alpha=0.85,
+                edgecolors="none",
+            )
+
+            legend_ax.text(
+                x + 0.075,
+                yy,
+                label,
+                fontsize=11.4,
+                va="center",
+            )
+
+        y -= 0.185
+
+    legend_ax.set_xlim(0, 1)
+    legend_ax.set_ylim(0, 1)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a publication-style 2x3 UMAP figure with grouped bottom legends."
+        description="Create a publication-style 2x3 UMAP figure with a compact right-side legend."
     )
 
     parser.add_argument("--json_file", required=True, help="Path to config.json")
@@ -231,7 +318,7 @@ def main():
         help="Checkpoint mapping, e.g. --ckpt Liver=outputs/Liver/best.ckpt",
     )
 
-    parser.add_argument("--out", default="combined_umap_grouped_legend.pdf")
+    parser.add_argument("--out", default="combined_umap_right_large_legend_v2.pdf")
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--mask", action="store_true")
     parser.add_argument("--total_samples", type=int, default=5000)
@@ -239,7 +326,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_neighbors", type=int, default=80)
     parser.add_argument("--min_dist", type=float, default=0.1)
-    parser.add_argument("--point_size", type=float, default=4.2)
+    parser.add_argument("--point_size", type=float, default=4.0)
     parser.add_argument("--alpha", type=float, default=0.45)
     parser.add_argument("--dpi", type=int, default=300)
     parser.add_argument("--save_npz", action="store_true")
@@ -268,35 +355,35 @@ def main():
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 9.5,
-        "axes.titlesize": 12.5,
-        "axes.labelsize": 11.5,
-        "legend.fontsize": 8.6,
+        "font.size": 10.0,
+        "axes.titlesize": 14.0,
+        "axes.labelsize": 12.0,
+        "legend.fontsize": 12.0,
         "axes.linewidth": 0.85,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
 
-    fig = plt.figure(figsize=(10.8, 6.9))
+    fig = plt.figure(figsize=(11.8, 6.4))
 
     gs = GridSpec(
-        3,
-        3,
+        2,
+        4,
         figure=fig,
-        height_ratios=[1.0, 1.0, 0.42],
-        left=0.085,
-        right=0.985,
-        top=0.91,
-        bottom=0.13,
-        wspace=0.13,
-        hspace=0.10,
+        width_ratios=[1.0, 1.0, 1.0, 0.78],
+        height_ratios=[1.0, 1.0],
+        left=0.08,
+        right=0.98,
+        top=0.90,
+        bottom=0.14,
+        wspace=0.16,
+        hspace=0.12,
     )
 
     axes = [[fig.add_subplot(gs[r, c]) for c in range(3)] for r in range(2)]
-    legend_axes = [fig.add_subplot(gs[2, c]) for c in range(3)]
 
-    for lax in legend_axes:
-        lax.axis("off")
+    legend_ax = fig.add_subplot(gs[:, 3])
+    legend_ax.axis("off")
 
     saved_data = {}
 
@@ -356,69 +443,57 @@ def main():
             saved_data[f"{key}_{subset}_coords"] = coords
             saved_data[f"{key}_{subset}_labels"] = labels
 
-    # Grouped large legends below each dataset column.
-    for col, key in enumerate(DATASET_KEYS):
-        legend_axes[col].legend(
-            handles=col_legend_handles[key],
-            labels=LEGENDS[key],
-            title=DISPLAY_NAMES[key],
-            loc="center",
-            ncol=2,
-            frameon=False,
-            handletextpad=0.45,
-            columnspacing=0.80,
-            labelspacing=0.36,
-            fontsize=8.6,
-            title_fontsize=9.8,
-            markerscale=2.35,
-        )
+    add_right_legend(legend_ax, col_legend_handles)
 
     fig.canvas.draw()
 
     pos_top = axes[0][0].get_position()
     pos_bottom = axes[1][0].get_position()
+    pos_left = axes[0][0].get_position()
+    pos_right = axes[0][2].get_position()
 
     y_train = (pos_top.y0 + pos_top.y1) / 2
     y_test = (pos_bottom.y0 + pos_bottom.y1) / 2
+    x_center_panels = (pos_left.x0 + pos_right.x1) / 2
 
     fig.text(
-        0.50,
-        0.055,
+        x_center_panels,
+        0.065,
         "UMAP Dimension 1",
         ha="center",
         va="center",
-        fontsize=12.2,
+        fontsize=13.0,
     )
 
     fig.text(
-        0.030,
+        0.028,
         (pos_bottom.y0 + pos_top.y1) / 2,
         "UMAP Dimension 2",
         ha="center",
         va="center",
         rotation="vertical",
-        fontsize=12.2,
+        fontsize=13.0,
     )
 
     fig.text(
-        0.055,
+        0.052,
         y_train,
         row_labels[0],
         va="center",
         ha="center",
         rotation="vertical",
-        fontsize=11.2,
+        fontsize=12.0,
         fontweight="bold",
     )
 
     fig.text(
-        0.055,
+        0.052,
         y_test,
         row_labels[1],
         va="center",
         ha="center",
         rotation="vertical",
-        fontsize=11.2,
+        fontsize=12.0,
         fontweight="bold",
     )
 
