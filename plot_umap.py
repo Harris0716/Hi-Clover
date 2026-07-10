@@ -16,6 +16,7 @@ import HiSiNet.models as models
 
 
 DATASET_KEYS = ["liver", "NPC", "TCell"]
+
 DISPLAY_NAMES = {
     "liver": "Liver",
     "NPC": "NPC",
@@ -23,9 +24,24 @@ DISPLAY_NAMES = {
 }
 
 LEGENDS = {
-    "liver": ["Liver NIPBL R1", "Liver NIPBL R2", "Liver TAM R1", "Liver TAM R2"],
-    "NPC": ["NPC Ctrl R1", "NPC Ctrl R2", "NPC Treat (Aux) R1", "NPC Treat (Aux) R2"],
-    "TCell": ["TCells Ctrl (DP) R1", "TCells Ctrl (DP) R2", "TCells Treat (SP) R1", "TCells Treat (SP) R2"],
+    "liver": [
+        "Liver NIPBL R1",
+        "Liver NIPBL R2",
+        "Liver TAM R1",
+        "Liver TAM R2",
+    ],
+    "NPC": [
+        "NPC Ctrl R1",
+        "NPC Ctrl R2",
+        "NPC Treat (Aux) R1",
+        "NPC Treat (Aux) R2",
+    ],
+    "TCell": [
+        "T Cell Ctrl (DP) R1",
+        "T Cell Ctrl (DP) R2",
+        "T Cell Treat (SP) R1",
+        "T Cell Treat (SP) R2",
+    ],
 }
 
 UMAP_COLORS = ["#1F77B4", "#AEC7E8", "#D62728", "#FF9896"]
@@ -56,7 +72,11 @@ def resolve_json_path(json_file):
 
 
 def load_model(model_name, ckpt_path, device, mask=False, embedding_dim=128):
-    model = getattr(models, model_name)(mask=mask, embedding_dim=embedding_dim).to(device)
+    model = getattr(models, model_name)(
+        mask=mask,
+        embedding_dim=embedding_dim,
+    ).to(device)
+
     state = torch.load(ckpt_path, map_location=device)
 
     if isinstance(state, dict) and "state_dict" in state:
@@ -75,9 +95,17 @@ def is_rep2_path(path):
     return any(token in up for token in ["R2", "REP2"])
 
 
-def sample_embeddings_for_paths(model, paths, device, total_samples=5000, batch_size=64, seed=42):
+def sample_embeddings_for_paths(
+    model,
+    paths,
+    device,
+    total_samples=5000,
+    batch_size=64,
+    seed=42,
+):
     embs = []
     labels = []
+
     samples_per_file = max(1, int(total_samples) // max(1, len(paths)))
 
     generator = torch.Generator()
@@ -86,7 +114,13 @@ def sample_embeddings_for_paths(model, paths, device, total_samples=5000, batch_
     with torch.no_grad():
         for path in paths:
             ds = HiCDatasetDec.load(path)
-            loader = DataLoader(ds, batch_size=batch_size, shuffle=True, generator=generator)
+            loader = DataLoader(
+                ds,
+                batch_size=batch_size,
+                shuffle=True,
+                generator=generator,
+            )
+
             is_r2 = is_rep2_path(path)
             count = 0
 
@@ -98,9 +132,11 @@ def sample_embeddings_for_paths(model, paths, device, total_samples=5000, batch_
                 remaining = samples_per_file - count
                 if remaining <= 0:
                     break
+
                 n = min(len(class_ids), remaining)
 
                 embs.append(emb[:n])
+
                 for cid in class_ids[:n]:
                     # class_id == 1 -> labels 1/2; otherwise -> labels 3/4.
                     if int(cid) == 1:
@@ -109,6 +145,7 @@ def sample_embeddings_for_paths(model, paths, device, total_samples=5000, batch_
                         labels.append(4 if is_r2 else 3)
 
                 count += n
+
                 if count >= samples_per_file:
                     break
 
@@ -123,15 +160,27 @@ def paths_for_subset(config, key, subset):
         return config[key]["training"] + config[key]["validation"]
     if subset == "test":
         return config[key]["test"]
+
     raise ValueError(f"Unknown subset: {subset}")
 
 
-def plot_one_panel(ax, coords, labels, legend_labels, title=None, point_size=4.0, alpha=0.45):
+def plot_one_panel(
+    ax,
+    coords,
+    labels,
+    legend_labels,
+    title=None,
+    point_size=4.0,
+    alpha=0.45,
+):
     handles = []
+
     for label_id, color, legend_name in zip([1, 2, 3, 4], UMAP_COLORS, legend_labels):
         idx = labels == label_id
+
         h = ax.scatter(
-            coords[idx, 0], coords[idx, 1],
+            coords[idx, 0],
+            coords[idx, 1],
             s=point_size,
             c=color,
             alpha=alpha,
@@ -139,6 +188,7 @@ def plot_one_panel(ax, coords, labels, legend_labels, title=None, point_size=4.0
             label=legend_name,
             rasterized=True,
         )
+
         handles.append(h)
 
     if title:
@@ -156,12 +206,19 @@ def plot_one_panel(ax, coords, labels, legend_labels, title=None, point_size=4.0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create a publication-style 2x3 UMAP figure.")
+    parser = argparse.ArgumentParser(
+        description="Create a publication-style 2x3 UMAP figure with enlarged legends."
+    )
+
     parser.add_argument("--json_file", required=True, help="Path to config.json")
     parser.add_argument("--model_name", default="TripletLeNetBatchNormSE")
-    parser.add_argument("--ckpt", action="append", required=True,
-                        help="Checkpoint mapping, e.g. --ckpt liver=outputs/liver/best.ckpt")
-    parser.add_argument("--out", default="combined_umap_paper_v5.pdf")
+    parser.add_argument(
+        "--ckpt",
+        action="append",
+        required=True,
+        help="Checkpoint mapping, e.g. --ckpt liver=outputs/liver/best.ckpt",
+    )
+    parser.add_argument("--out", default="combined_umap_large_legend.pdf")
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--mask", action="store_true")
     parser.add_argument("--total_samples", type=int, default=5000)
@@ -173,14 +230,17 @@ def main():
     parser.add_argument("--alpha", type=float, default=0.45)
     parser.add_argument("--dpi", type=int, default=300)
     parser.add_argument("--save_npz", action="store_true")
+
     args = parser.parse_args()
 
     ckpts = parse_key_value(args.ckpt, "--ckpt")
     missing = [k for k in DATASET_KEYS if k not in ckpts]
+
     if missing:
         raise ValueError(f"Missing checkpoint(s) for: {missing}. Required keys: {DATASET_KEYS}")
 
     json_path = resolve_json_path(args.json_file)
+
     with open(json_path) as f:
         config = json.load(f)
 
@@ -189,30 +249,33 @@ def main():
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 8.5,
-        "axes.titlesize": 11.0,
-        "axes.labelsize": 10.0,
-        "legend.fontsize": 5.9,
+        "font.size": 9.5,
+        "axes.titlesize": 12.0,
+        "axes.labelsize": 11.0,
+        "legend.fontsize": 8.5,
         "axes.linewidth": 0.8,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
 
-    fig = plt.figure(figsize=(9.4, 5.85))
+    fig = plt.figure(figsize=(9.4, 6.8))
+
     gs = GridSpec(
-        3, 3,
+        3,
+        3,
         figure=fig,
-        height_ratios=[1.0, 1.0, 0.20],
+        height_ratios=[1.0, 1.0, 0.42],
         left=0.10,
         right=0.985,
-        top=0.90,
-        bottom=0.14,
-        wspace=0.14,
-        hspace=0.10,
+        top=0.91,
+        bottom=0.10,
+        wspace=0.16,
+        hspace=0.12,
     )
 
     axes = [[fig.add_subplot(gs[r, c]) for c in range(3)] for r in range(2)]
     legend_axes = [fig.add_subplot(gs[2, c]) for c in range(3)]
+
     for lax in legend_axes:
         lax.axis("off")
 
@@ -223,13 +286,24 @@ def main():
 
     for col, key in enumerate(DATASET_KEYS):
         print(f"\nLoading model for {key}: {ckpts[key]}")
-        model = load_model(args.model_name, ckpts[key], device, mask=args.mask, embedding_dim=args.embedding_dim)
+
+        model = load_model(
+            args.model_name,
+            ckpts[key],
+            device,
+            mask=args.mask,
+            embedding_dim=args.embedding_dim,
+        )
 
         for row, subset in enumerate(subsets):
             print(f"  Processing {key} / {subset}...")
+
             paths = paths_for_subset(config, key, subset)
+
             embs, labels = sample_embeddings_for_paths(
-                model, paths, device,
+                model,
+                paths,
+                device,
                 total_samples=args.total_samples,
                 batch_size=args.batch_size,
                 seed=args.seed + row * 100 + col,
@@ -241,39 +315,45 @@ def main():
                 min_dist=args.min_dist,
                 metric="euclidean",
             )
+
             coords = reducer.fit_transform(embs)
 
             title = DISPLAY_NAMES[key] if row == 0 else None
+
             handles = plot_one_panel(
-                axes[row][col], coords, labels, LEGENDS[key],
-                title=title, point_size=args.point_size, alpha=args.alpha,
+                axes[row][col],
+                coords,
+                labels,
+                LEGENDS[key],
+                title=title,
+                point_size=args.point_size,
+                alpha=args.alpha,
             )
+
             if row == 0:
                 col_legend_handles[key] = handles
 
             saved_data[f"{key}_{subset}_coords"] = coords
             saved_data[f"{key}_{subset}_labels"] = labels
 
-    # Dedicated, compact legends below each column.
+    # Larger legends below each dataset column.
     for col, key in enumerate(DATASET_KEYS):
         legend_axes[col].legend(
             handles=col_legend_handles[key],
             labels=LEGENDS[key],
             title="Sample ID",
             loc="center",
-            ncol=2,
+            ncol=1,
             frameon=False,
-            handletextpad=0.35,
-            columnspacing=0.58,
-            labelspacing=0.24,
-            fontsize=5.7,
-            title_fontsize=6.1,
-            markerscale=1.75,
+            handletextpad=0.45,
+            labelspacing=0.30,
+            fontsize=8.5,
+            title_fontsize=9.0,
+            markerscale=2.4,
         )
 
-    # Dynamically place row labels and global axis labels based on panel positions.
-    # The x-axis label is placed below the legend row so it does not touch the bottom panels.
     fig.canvas.draw()
+
     pos_top = axes[0][0].get_position()
     pos_bottom = axes[1][0].get_position()
     pos_legend = legend_axes[1].get_position()
@@ -282,20 +362,54 @@ def main():
     y_test = (pos_bottom.y0 + pos_bottom.y1) / 2
     y_xlabel = max(0.035, pos_legend.y0 - 0.035)
 
-    fig.text(0.50, y_xlabel, "UMAP Dimension 1", ha="center", va="center", fontsize=10.8)
-    fig.text(0.030, (pos_bottom.y0 + pos_top.y1) / 2, "UMAP Dimension 2",
-             ha="center", va="center", rotation="vertical", fontsize=10.8)
+    fig.text(
+        0.50,
+        y_xlabel,
+        "UMAP Dimension 1",
+        ha="center",
+        va="center",
+        fontsize=11.0,
+    )
 
-    fig.text(0.060, y_train, row_labels[0], va="center", ha="center",
-             rotation="vertical", fontsize=10.0, fontweight="bold")
-    fig.text(0.060, y_test, row_labels[1], va="center", ha="center",
-             rotation="vertical", fontsize=10.0, fontweight="bold")
+    fig.text(
+        0.030,
+        (pos_bottom.y0 + pos_top.y1) / 2,
+        "UMAP Dimension 2",
+        ha="center",
+        va="center",
+        rotation="vertical",
+        fontsize=11.0,
+    )
+
+    fig.text(
+        0.060,
+        y_train,
+        row_labels[0],
+        va="center",
+        ha="center",
+        rotation="vertical",
+        fontsize=10.5,
+        fontweight="bold",
+    )
+
+    fig.text(
+        0.060,
+        y_test,
+        row_labels[1],
+        va="center",
+        ha="center",
+        rotation="vertical",
+        fontsize=10.5,
+        fontweight="bold",
+    )
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
+
     fig.savefig(args.out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)
+
     print(f"\nSaved figure: {args.out}")
 
     if args.save_npz:
