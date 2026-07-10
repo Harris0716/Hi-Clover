@@ -49,22 +49,28 @@ UMAP_COLORS = ["#1F77B4", "#AEC7E8", "#D62728", "#FF9896"]
 
 def parse_key_value(items, arg_name):
     out = {}
+
     for item in items:
         if "=" not in item:
             raise ValueError(f"{arg_name} must use key=value format, got: {item}")
+
         key, value = item.split("=", 1)
         out[key] = value
+
     return out
 
 
 def resolve_json_path(json_file):
     json_path = os.path.abspath(os.path.expanduser(json_file))
+
     if os.path.exists(json_path):
         return json_path
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
+
     for base in [os.path.dirname(script_dir), script_dir, os.getcwd()]:
         candidate = os.path.normpath(os.path.join(base, json_file))
+
         if os.path.exists(candidate):
             return os.path.abspath(candidate)
 
@@ -85,8 +91,10 @@ def load_model(model_name, ckpt_path, device, mask=False, embedding_dim=128):
         state = state["model_state_dict"]
 
     state = OrderedDict((k.replace("module.", ""), v) for k, v in state.items())
+
     model.load_state_dict(state)
     model.eval()
+
     return model
 
 
@@ -114,6 +122,7 @@ def sample_embeddings_for_paths(
     with torch.no_grad():
         for path in paths:
             ds = HiCDatasetDec.load(path)
+
             loader = DataLoader(
                 ds,
                 batch_size=batch_size,
@@ -130,6 +139,7 @@ def sample_embeddings_for_paths(
                 emb = model.forward_one(x).cpu().numpy()
 
                 remaining = samples_per_file - count
+
                 if remaining <= 0:
                     break
 
@@ -158,6 +168,7 @@ def sample_embeddings_for_paths(
 def paths_for_subset(config, key, subset):
     if subset == "train_val":
         return config[key]["training"] + config[key]["validation"]
+
     if subset == "test":
         return config[key]["test"]
 
@@ -205,20 +216,79 @@ def plot_one_panel(
     return handles
 
 
+def add_right_legend(legend_ax, col_legend_handles):
+    legend_ax.axis("off")
+
+    legend_ax.text(
+        0.0,
+        0.98,
+        "Sample ID",
+        fontsize=15,
+        fontweight="bold",
+        va="top",
+    )
+
+    y = 0.88
+
+    for key in DATASET_KEYS:
+        legend_ax.text(
+            0.0,
+            y,
+            DISPLAY_NAMES[key],
+            fontsize=13.5,
+            fontweight="bold",
+            va="top",
+        )
+
+        y -= 0.075
+
+        handles = col_legend_handles[key]
+        labels = LEGENDS[key]
+
+        for h, label in zip(handles, labels):
+            color = h.get_facecolor()[0]
+
+            legend_ax.scatter(
+                0.04,
+                y,
+                s=70,
+                color=color,
+                alpha=0.80,
+                edgecolors="none",
+            )
+
+            legend_ax.text(
+                0.12,
+                y,
+                label,
+                fontsize=12.4,
+                va="center",
+            )
+
+            y -= 0.058
+
+        y -= 0.060
+
+    legend_ax.set_xlim(0, 1)
+    legend_ax.set_ylim(0, 1)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a publication-style 2x3 UMAP figure with enlarged legends."
+        description="Create a publication-style 2x3 UMAP figure with a large right-side legend."
     )
 
     parser.add_argument("--json_file", required=True, help="Path to config.json")
     parser.add_argument("--model_name", default="TripletLeNetBatchNormSE")
+
     parser.add_argument(
         "--ckpt",
         action="append",
         required=True,
         help="Checkpoint mapping, e.g. --ckpt liver=outputs/liver/best.ckpt",
     )
-    parser.add_argument("--out", default="combined_umap_large_legend.pdf")
+
+    parser.add_argument("--out", default="combined_umap_right_large_legend.pdf")
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--mask", action="store_true")
     parser.add_argument("--total_samples", type=int, default=5000)
@@ -234,6 +304,7 @@ def main():
     args = parser.parse_args()
 
     ckpts = parse_key_value(args.ckpt, "--ckpt")
+
     missing = [k for k in DATASET_KEYS if k not in ckpts]
 
     if missing:
@@ -245,41 +316,43 @@ def main():
         config = json.load(f)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     print(f"Using device: {device}")
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 9.5,
-        "axes.titlesize": 12.0,
-        "axes.labelsize": 11.0,
-        "legend.fontsize": 8.5,
-        "axes.linewidth": 0.8,
+        "font.size": 10.0,
+        "axes.titlesize": 14.0,
+        "axes.labelsize": 12.0,
+        "legend.fontsize": 12.0,
+        "axes.linewidth": 0.9,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
 
-    fig = plt.figure(figsize=(9.4, 6.8))
+    fig = plt.figure(figsize=(11.8, 6.4))
 
     gs = GridSpec(
-        3,
-        3,
+        2,
+        4,
         figure=fig,
-        height_ratios=[1.0, 1.0, 0.42],
-        left=0.10,
-        right=0.985,
-        top=0.91,
-        bottom=0.10,
+        width_ratios=[1.0, 1.0, 1.0, 0.78],
+        height_ratios=[1.0, 1.0],
+        left=0.08,
+        right=0.98,
+        top=0.90,
+        bottom=0.14,
         wspace=0.16,
         hspace=0.12,
     )
 
     axes = [[fig.add_subplot(gs[r, c]) for c in range(3)] for r in range(2)]
-    legend_axes = [fig.add_subplot(gs[2, c]) for c in range(3)]
 
-    for lax in legend_axes:
-        lax.axis("off")
+    legend_ax = fig.add_subplot(gs[:, 3])
+    legend_ax.axis("off")
 
     saved_data = {}
+
     subsets = ["train_val", "test"]
     row_labels = ["Train + Val", "Test"]
     col_legend_handles = {}
@@ -336,74 +409,59 @@ def main():
             saved_data[f"{key}_{subset}_coords"] = coords
             saved_data[f"{key}_{subset}_labels"] = labels
 
-    # Larger legends below each dataset column.
-    for col, key in enumerate(DATASET_KEYS):
-        legend_axes[col].legend(
-            handles=col_legend_handles[key],
-            labels=LEGENDS[key],
-            title="Sample ID",
-            loc="center",
-            ncol=1,
-            frameon=False,
-            handletextpad=0.45,
-            labelspacing=0.30,
-            fontsize=8.5,
-            title_fontsize=9.0,
-            markerscale=2.4,
-        )
+    add_right_legend(legend_ax, col_legend_handles)
 
     fig.canvas.draw()
 
     pos_top = axes[0][0].get_position()
     pos_bottom = axes[1][0].get_position()
-    pos_legend = legend_axes[1].get_position()
 
     y_train = (pos_top.y0 + pos_top.y1) / 2
     y_test = (pos_bottom.y0 + pos_bottom.y1) / 2
-    y_xlabel = max(0.035, pos_legend.y0 - 0.035)
 
     fig.text(
-        0.50,
-        y_xlabel,
+        0.455,
+        0.065,
         "UMAP Dimension 1",
         ha="center",
         va="center",
-        fontsize=11.0,
+        fontsize=13.0,
     )
 
     fig.text(
-        0.030,
+        0.028,
         (pos_bottom.y0 + pos_top.y1) / 2,
         "UMAP Dimension 2",
         ha="center",
         va="center",
         rotation="vertical",
-        fontsize=11.0,
+        fontsize=13.0,
     )
 
     fig.text(
-        0.060,
+        0.052,
         y_train,
         row_labels[0],
         va="center",
         ha="center",
         rotation="vertical",
-        fontsize=10.5,
+        fontsize=12.0,
         fontweight="bold",
     )
 
     fig.text(
-        0.060,
+        0.052,
         y_test,
         row_labels[1],
         va="center",
         ha="center",
         rotation="vertical",
-        fontsize=10.5,
+        fontsize=12.0,
         fontweight="bold",
     )
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
+
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
