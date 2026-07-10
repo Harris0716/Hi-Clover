@@ -15,16 +15,16 @@ from HiSiNet.HiCDatasetClass import HiCDatasetDec
 import HiSiNet.models as models
 
 
-DATASET_KEYS = ["liver", "NPC", "TCell"]
+DATASET_KEYS = ["Liver", "NPC", "TCell"]
 
 DISPLAY_NAMES = {
-    "liver": "Liver",
+    "Liver": "Liver",
     "NPC": "NPC",
     "TCell": "T Cell",
 }
 
 LEGENDS = {
-    "liver": [
+    "Liver": [
         "Liver NIPBL R1",
         "Liver NIPBL R2",
         "Liver TAM R1",
