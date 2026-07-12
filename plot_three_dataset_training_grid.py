@@ -99,10 +99,11 @@ def main():
     rows = len(datasets)
     cols = 4
     
-    # 調整 figsize 比例：加大寬度 (14)，縮減每列高度 (1.6 * rows)
+    # 調整 figsize 比例：將總寬度設為 12，高度根據列數精確計算
+    # 這確保了每個子圖的比例接近標準的 4:3 (寬度約 3，高度約 2.3)
     fig, axes = plt.subplots(
         rows, cols, 
-        figsize=(14, 1.6 * rows + 0.5), 
+        figsize=(12, 2.3 * rows + 0.8), 
         layout="constrained",
         sharex=False
     )
