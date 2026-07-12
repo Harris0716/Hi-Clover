@@ -1,133 +1,279 @@
 #!/usr/bin/env python3
 """
-Paper-style multi-dataset training-statistics grid.
+Create a publication-style 3 × 4 training-statistics figure from history NPZ files.
 
-V4: paper-style layout with mostly original colors, but learning rate uses a muted purple
-to distinguish it from validation loss. Log-ratio and gradient-norm panels use fixed
-y-limits for cleaner cross-dataset comparison. Dataset labels are normalized for display.
+Main layout changes:
+- Larger plotting area with balanced left/right margins.
+- Compact, readable top legend.
+- More horizontal spacing before the learning-rate column.
+- Compact scientific notation for learning-rate ticks.
+- Column titles appear only once.
+- X-axis labels and tick labels appear only on the bottom row.
+- Export keeps the manually defined margins instead of using tight cropping.
 
-Expected npz keys from train_0615.py:
-  train_losses, val_losses, val_log_ratio_history,
-  grad_norm_backbone_history, lr_history,
-  optional: best_epoch, best_val_loss
+Expected NPZ keys:
+    train_losses
+    val_losses
+    val_log_ratio_history
+    grad_norm_backbone_history
+    lr_history
+
+Optional NPZ keys:
+    best_epoch
+    best_val_loss
 
 Example:
-  python plot_three_dataset_training_grid_paper_v4.py \
-    --npz "Liver=outputs/liver_B_new/liver_B_new_history.npz" \
-    --npz "NPC=outputs/NPC_B_new/NPC_B_new_history.npz" \
-    --npz "T Cell=outputs/TCell_B_new/TCell_B_new_history.npz" \
-    --out B_three_dataset_training_stats_paper_v4.pdf \
-    --mark_best \
-    --lr_log
+    python plot_three_dataset_training_grid_refined.py \
+        --npz "Liver=outputs/Liver_history.npz" \
+        --npz "NPC=outputs/NPC_history.npz" \
+        --npz "T Cell=outputs/TCell_history.npz" \
+        --out three_dataset_training_stats_refined.pdf \
+        --mark_best \
+        --lr_log
 """
 
 import argparse
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.lines import Line2D
-from matplotlib.ticker import LogLocator, LogFormatterMathtext
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 
-def read_array(hist, key, default=None):
-    if key in hist.files:
-        arr = np.asarray(hist[key])
-        if arr.ndim == 0:
-            arr = arr.reshape(1)
-        return arr
+def read_array(history, key, default=None):
+    if key in history.files:
+        array = np.asarray(history[key])
+
+        if array.ndim == 0:
+            array = array.reshape(1)
+
+        return array.astype(float)
+
     if default is not None:
-        return np.asarray(default)
-    raise KeyError(f"Missing key '{key}' in npz. Available keys: {hist.files}")
+        return np.asarray(default, dtype=float)
 
+    raise KeyError(
+        f"Missing key '{key}' in NPZ. "
+        f"Available keys: {history.files}"
+    )
 
 
 def normalize_display_label(label):
-    """Normalize common dataset labels for paper figures."""
     clean = label.strip()
-    low = clean.lower().replace("_", " ").replace("-", " ")
-    if low == "liver":
+    normalized = (
+        clean.lower()
+        .replace("_", " ")
+        .replace("-", " ")
+    )
+
+    if normalized == "liver":
         return "Liver"
-    if low == "npc":
+
+    if normalized == "npc":
         return "NPC"
-    if low in {"tcell", "t cell", "t-cell"}:
+
+    if normalized in {"tcell", "t cell"}:
         return "T Cell"
+
     return clean
+
 
 def parse_labeled_npz(item):
     if "=" not in item:
         path = Path(item)
-        return normalize_display_label(path.stem.replace("_history", "")), path
+        label = path.stem.replace("_history", "")
+        return normalize_display_label(label), path
+
     label, path = item.split("=", 1)
     return normalize_display_label(label), Path(path.strip())
 
 
 def align_epochs(*arrays):
-    lengths = [len(a) for a in arrays if a is not None and len(a) > 0]
+    lengths = [
+        len(array)
+        for array in arrays
+        if array is not None and len(array) > 0
+    ]
+
     if not lengths:
-        raise ValueError("No non-empty arrays found.")
-    n = min(lengths)
-    return np.arange(1, n + 1), [a[:n] if a is not None and len(a) > 0 else None for a in arrays]
+        raise ValueError("No non-empty arrays were found.")
+
+    sample_count = min(lengths)
+    epochs = np.arange(1, sample_count + 1)
+
+    aligned = [
+        array[:sample_count]
+        if array is not None and len(array) > 0
+        else None
+        for array in arrays
+    ]
+
+    return epochs, aligned
 
 
-def get_best_index(hist, val_losses, epochs):
-    # best_epoch may be saved as 0-based index or 1-based epoch in different scripts.
-    # Try to handle both safely.
-    if "best_epoch" in hist.files:
-        raw = int(np.asarray(hist["best_epoch"]).item())
-        if raw in epochs:
-            idx = int(np.where(epochs == raw)[0][0])
-        else:
-            idx = raw
+def get_best_index(history, val_losses):
+    """
+    Resolve best_epoch robustly.
+
+    The current training script stores best_epoch as a zero-based array index.
+    For compatibility with older files, the function also checks whether a
+    one-based interpretation better matches best_val_loss.
+    """
+    fallback_index = int(np.argmin(val_losses))
+
+    if "best_epoch" not in history.files:
+        return fallback_index
+
+    raw = int(np.asarray(history["best_epoch"]).item())
+    candidates = []
+
+    if 0 <= raw < len(val_losses):
+        candidates.append(raw)
+
+    if 1 <= raw <= len(val_losses):
+        candidates.append(raw - 1)
+
+    candidates = list(dict.fromkeys(candidates))
+
+    if not candidates:
+        return fallback_index
+
+    if "best_val_loss" in history.files:
+        target = float(np.asarray(history["best_val_loss"]).item())
+
+        return min(
+            candidates,
+            key=lambda index: abs(float(val_losses[index]) - target),
+        )
+
+    # Prefer the current zero-based convention.
+    return candidates[0]
+
+
+def compact_scientific(value, _position):
+    """Format ticks as 1e-3, 6e-4, etc., to avoid wide math-text labels."""
+    if value == 0:
+        return "0"
+
+    exponent = int(np.floor(np.log10(abs(value))))
+    coefficient = value / (10 ** exponent)
+
+    if np.isclose(coefficient, round(coefficient), atol=1e-8):
+        coefficient_text = f"{int(round(coefficient))}"
     else:
-        idx = int(np.argmin(val_losses))
-    return max(0, min(idx, len(epochs) - 1))
+        coefficient_text = f"{coefficient:.1f}".rstrip("0").rstrip(".")
+
+    return f"{coefficient_text}e{exponent}"
 
 
-def style_axis(ax):
-    ax.tick_params(axis="both", labelsize=8, length=3, width=0.8)
+def style_axis(ax, show_x_ticks):
+    ax.tick_params(
+        axis="both",
+        labelsize=8.5,
+        length=3,
+        width=0.75,
+        pad=2.5,
+    )
+
+    if not show_x_ticks:
+        ax.tick_params(axis="x", labelbottom=False)
+
     for spine in ax.spines.values():
-        spine.set_linewidth(0.8)
+        spine.set_linewidth(0.75)
+        spine.set_color("#555555")
+
     ax.grid(False)
+    ax.margins(x=0.03)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create a paper-style training-statistics grid from history npz files.")
-    parser.add_argument("--npz", action="append", required=True,
-                        help="Input as Label=path_to_history.npz. Use multiple times.")
-    parser.add_argument("--out", default="training_stats_grid_paper.pdf")
-    parser.add_argument("--max_norm", type=float, default=1.0,
-                        help="Reference line for gradient clipping max norm.")
-    parser.add_argument("--mark_best", action="store_true",
-                        help="Draw best-validation-epoch vertical lines in all panels.")
-    parser.add_argument("--annotate_best", action="store_true",
-                        help="Write best epoch and best val loss in the loss panel.")
-    parser.add_argument("--lr_log", action="store_true", help="Use log scale for learning rate axis.")
-    parser.add_argument("--log_ratio_ylim", type=float, nargs=2, default=(0.0, 0.9),
-                        metavar=("YMIN", "YMAX"),
-                        help="Shared y-axis limit for all log-ratio panels. Use 'none' by editing if not needed.")
-    parser.add_argument("--grad_norm_ylim", type=float, nargs=2, default=(0.0, 1.6),
-                        metavar=("YMIN", "YMAX"),
-                        help="Shared y-axis limit for all gradient-norm panels.")
-    parser.add_argument("--dpi", type=int, default=300)
+    parser = argparse.ArgumentParser(
+        description=(
+            "Create a publication-style multi-dataset "
+            "training-statistics grid."
+        )
+    )
+
+    parser.add_argument(
+        "--npz",
+        action="append",
+        required=True,
+        help=(
+            "Input as Label=path_to_history.npz. "
+            "Use this option multiple times."
+        ),
+    )
+    parser.add_argument(
+        "--out",
+        default="training_stats_grid_refined.pdf",
+    )
+    parser.add_argument(
+        "--max_norm",
+        type=float,
+        default=1.0,
+        help="Reference line for gradient clipping max norm.",
+    )
+    parser.add_argument(
+        "--mark_best",
+        action="store_true",
+        help="Draw the best-validation-epoch line.",
+    )
+    parser.add_argument(
+        "--annotate_best",
+        action="store_true",
+        help="Annotate best epoch and validation loss in loss panels.",
+    )
+    parser.add_argument(
+        "--lr_log",
+        action="store_true",
+        help="Use logarithmic scale for the learning-rate axis.",
+    )
+    parser.add_argument(
+        "--log_ratio_ylim",
+        type=float,
+        nargs=2,
+        default=(0.0, 0.9),
+        metavar=("YMIN", "YMAX"),
+    )
+    parser.add_argument(
+        "--grad_norm_ylim",
+        type=float,
+        nargs=2,
+        default=(0.0, 1.6),
+        metavar=("YMIN", "YMAX"),
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=300,
+    )
+
     args = parser.parse_args()
 
-    # Formal paper-like defaults. PDF remains vector; dpi matters mainly for raster formats.
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
+        "font.size": 9.5,
+        "axes.linewidth": 0.75,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
-        "axes.linewidth": 0.8,
     })
 
-    labeled_paths = [parse_labeled_npz(x) for x in args.npz]
-    n_rows = len(labeled_paths)
-    n_cols = 4
+    labeled_paths = [
+        parse_labeled_npz(item)
+        for item in args.npz
+    ]
+
+    row_count = len(labeled_paths)
+    column_count = 4
+
+    # Balanced for insertion into a portrait thesis page at full text width.
+    figure_height = 1.95 * row_count + 1.35
 
     fig, axes = plt.subplots(
-        n_rows,
-        n_cols,
-        figsize=(13.2, 2.25 * n_rows + 0.8),
+        row_count,
+        column_count,
+        figsize=(11.8, figure_height),
         squeeze=False,
         sharex=False,
     )
@@ -139,131 +285,292 @@ def main():
         "Learning rate",
     ]
 
-    # Original color scheme
-    color_train = "#1f77b4"   # blue
-    color_val = "#ff7f0e"     # orange
-    color_log = "#0000ff"     # blue, as in the original log-ratio panel
-    color_grad = "#008080"    # teal, as in the original gradient-norm panel
-    color_lr = "#6A3D9A"      # muted purple, separated from validation orange
-    color_ref = "#ff0000"     # red dashed reference line for grad clipping
-    color_best = "0.45"       # gray dashed line for best validation epoch
+    color_train = "#1f77b4"
+    color_validation = "#ff7f0e"
+    color_log_ratio = "#0000ff"
+    color_gradient = "#008080"
+    color_learning_rate = "#6A3D9A"
+    color_reference = "#ff0000"
+    color_best = "0.45"
 
-    for row_idx, (label, npz_path) in enumerate(labeled_paths):
+    for row_index, (label, npz_path) in enumerate(labeled_paths):
         if not npz_path.exists():
-            raise FileNotFoundError(f"Cannot find npz file: {npz_path}")
+            raise FileNotFoundError(
+                f"Cannot find NPZ file: {npz_path}"
+            )
 
-        hist = np.load(npz_path, allow_pickle=True)
-        train_losses = read_array(hist, "train_losses")
-        val_losses = read_array(hist, "val_losses")
-        log_ratio = read_array(hist, "val_log_ratio_history")
-        grad_norm = read_array(hist, "grad_norm_backbone_history")
-        lr_history = read_array(hist, "lr_history")
+        history = np.load(npz_path, allow_pickle=True)
 
-        epochs, (train_losses, val_losses, log_ratio, grad_norm, lr_history) = align_epochs(
-            train_losses, val_losses, log_ratio, grad_norm, lr_history
+        train_losses = read_array(history, "train_losses")
+        val_losses = read_array(history, "val_losses")
+        log_ratio = read_array(
+            history,
+            "val_log_ratio_history",
+        )
+        gradient_norm = read_array(
+            history,
+            "grad_norm_backbone_history",
+        )
+        learning_rate = read_array(
+            history,
+            "lr_history",
         )
 
-        best_idx = get_best_index(hist, val_losses, epochs)
-        best_epoch = int(epochs[best_idx])
-        best_val = float(val_losses[best_idx])
+        epochs, aligned_arrays = align_epochs(
+            train_losses,
+            val_losses,
+            log_ratio,
+            gradient_norm,
+            learning_rate,
+        )
 
-        # Row label on the left. It replaces repeated subplot titles.
-        axes[row_idx, 0].annotate(
+        (
+            train_losses,
+            val_losses,
+            log_ratio,
+            gradient_norm,
+            learning_rate,
+        ) = aligned_arrays
+
+        best_index = get_best_index(history, val_losses)
+        best_epoch = int(epochs[best_index])
+        best_val_loss = float(val_losses[best_index])
+
+        # Dataset label: placed in the reserved left margin.
+        axes[row_index, 0].annotate(
             label,
-            xy=(-0.38, 0.5),
+            xy=(-0.31, 0.5),
             xycoords="axes fraction",
             ha="right",
             va="center",
-            fontsize=12,
+            fontsize=12.0,
             fontweight="bold",
-            rotation=0,
+            clip_on=False,
         )
 
-        # Column headers only once, on the first row.
-        if row_idx == 0:
-            for col_idx, title in enumerate(column_titles):
-                axes[row_idx, col_idx].set_title(title, fontsize=10, fontweight="bold", pad=8)
+        if row_index == 0:
+            for column_index, title in enumerate(column_titles):
+                axes[row_index, column_index].set_title(
+                    title,
+                    fontsize=11.0,
+                    fontweight="bold",
+                    pad=8,
+                )
 
-        # 1. Loss
-        ax = axes[row_idx, 0]
-        ax.plot(epochs, train_losses, lw=1.35, color=color_train, label="Train")
-        ax.plot(epochs, val_losses, lw=1.35, color=color_val, label="Validation")
+        show_bottom_axis = row_index == row_count - 1
+
+        # 1. Triplet loss
+        ax = axes[row_index, 0]
+
+        ax.plot(
+            epochs,
+            train_losses,
+            linewidth=1.45,
+            color=color_train,
+        )
+        ax.plot(
+            epochs,
+            val_losses,
+            linewidth=1.45,
+            color=color_validation,
+        )
+
         if args.mark_best:
-            ax.axvline(best_epoch, color=color_best, ls="--", lw=0.9, alpha=0.8)
-            ax.scatter([best_epoch], [best_val], s=18, color=color_best, zorder=5)
+            ax.axvline(
+                best_epoch,
+                color=color_best,
+                linestyle="--",
+                linewidth=0.9,
+                alpha=0.8,
+            )
+            ax.scatter(
+                [best_epoch],
+                [best_val_loss],
+                s=19,
+                color=color_best,
+                zorder=5,
+            )
+
             if args.annotate_best:
                 ax.text(
-                    0.98, 0.93,
-                    f"Best epoch: {best_epoch}\nVal loss: {best_val:.4g}",
+                    0.97,
+                    0.93,
+                    (
+                        f"Epoch {best_epoch}\n"
+                        f"Val {best_val_loss:.4g}"
+                    ),
                     transform=ax.transAxes,
                     ha="right",
                     va="top",
-                    fontsize=7,
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.8),
+                    fontsize=7.3,
+                    bbox={
+                        "facecolor": "white",
+                        "edgecolor": "none",
+                        "alpha": 0.78,
+                        "pad": 1.5,
+                    },
                 )
-        style_axis(ax)
+
+        style_axis(ax, show_bottom_axis)
 
         # 2. Log-ratio
-        ax = axes[row_idx, 1]
-        ax.plot(epochs, log_ratio, lw=1.35, color=color_log)
+        ax = axes[row_index, 1]
+
+        ax.plot(
+            epochs,
+            log_ratio,
+            linewidth=1.45,
+            color=color_log_ratio,
+        )
+
         if args.mark_best:
-            ax.axvline(best_epoch, color=color_best, ls="--", lw=0.9, alpha=0.8)
-        if args.log_ratio_ylim is not None:
-            ax.set_ylim(args.log_ratio_ylim[0], args.log_ratio_ylim[1])
-        style_axis(ax)
+            ax.axvline(
+                best_epoch,
+                color=color_best,
+                linestyle="--",
+                linewidth=0.9,
+                alpha=0.8,
+            )
+
+        ax.set_ylim(*args.log_ratio_ylim)
+        style_axis(ax, show_bottom_axis)
 
         # 3. Gradient norm
-        ax = axes[row_idx, 2]
-        ax.plot(epochs, grad_norm, lw=1.35, color=color_grad)
-        ax.axhline(args.max_norm, color=color_ref, ls="--", lw=0.8, alpha=0.55)
-        if args.grad_norm_ylim is not None:
-            ax.set_ylim(args.grad_norm_ylim[0], args.grad_norm_ylim[1])
-        style_axis(ax)
+        ax = axes[row_index, 2]
+
+        ax.plot(
+            epochs,
+            gradient_norm,
+            linewidth=1.45,
+            color=color_gradient,
+        )
+        ax.axhline(
+            args.max_norm,
+            color=color_reference,
+            linestyle="--",
+            linewidth=0.85,
+            alpha=0.58,
+        )
+        ax.set_ylim(*args.grad_norm_ylim)
+        style_axis(ax, show_bottom_axis)
 
         # 4. Learning rate
-        ax = axes[row_idx, 3]
-        ax.plot(epochs, lr_history, lw=1.35, color=color_lr)
-        if args.lr_log and np.all(lr_history > 0):
+        ax = axes[row_index, 3]
+
+        ax.plot(
+            epochs,
+            learning_rate,
+            linewidth=1.45,
+            color=color_learning_rate,
+        )
+
+        if args.lr_log and np.all(learning_rate > 0):
             ax.set_yscale("log")
-            ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=4))
-            ax.yaxis.set_major_formatter(LogFormatterMathtext(base=10.0))
+
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(compact_scientific)
+        )
+
         if args.mark_best:
-            ax.axvline(best_epoch, color=color_best, ls="--", lw=0.9, alpha=0.8)
-        style_axis(ax)
+            ax.axvline(
+                best_epoch,
+                color=color_best,
+                linestyle="--",
+                linewidth=0.9,
+                alpha=0.8,
+            )
 
-        # X-axis labels only on the bottom row.
-        for col_idx in range(n_cols):
-            if row_idx == n_rows - 1:
-                axes[row_idx, col_idx].set_xlabel("Epoch", fontsize=9)
-            else:
-                axes[row_idx, col_idx].set_xticklabels([])
+        style_axis(ax, show_bottom_axis)
 
-    # A single legend instead of repeated legends.
+        if show_bottom_axis:
+            for column_index in range(column_count):
+                axes[row_index, column_index].set_xlabel(
+                    "Epoch",
+                    fontsize=9.5,
+                    labelpad=4,
+                )
+
     legend_handles = [
-        Line2D([0], [0], color=color_train, lw=1.5, label="Train"),
-        Line2D([0], [0], color=color_val, lw=1.5, label="Validation"),
+        Line2D(
+            [0],
+            [0],
+            color=color_train,
+            linewidth=1.5,
+            label="Train",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=color_validation,
+            linewidth=1.5,
+            label="Validation",
+        ),
     ]
+
     if args.mark_best:
-        legend_handles.append(Line2D([0], [0], color=color_best, ls="--", lw=1.0, label="Best validation epoch"))
-    legend_handles.append(Line2D([0], [0], color=color_ref, ls="--", lw=1.0, label=f"Gradient clipping max norm = {args.max_norm:g}"))
+        legend_handles.append(
+            Line2D(
+                [0],
+                [0],
+                color=color_best,
+                linestyle="--",
+                linewidth=1.0,
+                label="Best validation epoch",
+            )
+        )
+
+    legend_handles.append(
+        Line2D(
+            [0],
+            [0],
+            color=color_reference,
+            linestyle="--",
+            linewidth=1.0,
+            label=(
+                "Gradient clipping max norm "
+                f"= {args.max_norm:g}"
+            ),
+        )
+    )
 
     fig.legend(
         handles=legend_handles,
         loc="upper center",
-        bbox_to_anchor=(0.53, 0.995),
+        bbox_to_anchor=(0.54, 0.982),
         ncol=len(legend_handles),
         frameon=False,
-        fontsize=8,
-        handlelength=2.3,
-        columnspacing=1.3,
+        fontsize=8.7,
+        handlelength=2.4,
+        handletextpad=0.55,
+        columnspacing=1.25,
     )
 
-    fig.subplots_adjust(left=0.12, right=0.985, top=0.90, bottom=0.10, wspace=0.30, hspace=0.36)
+    # Deliberately reserve more space before the last column so its
+    # scientific-notation labels never overlap the gradient panel.
+    fig.subplots_adjust(
+        left=0.115,
+        right=0.975,
+        top=0.885,
+        bottom=0.105,
+        wspace=0.37,
+        hspace=0.30,
+    )
 
-    out_path = Path(args.out)
-    fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
+    output_path = Path(args.out)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    # Do not use bbox_inches="tight": it would remove the balanced margins.
+    fig.savefig(
+        output_path,
+        dpi=args.dpi,
+    )
     plt.close(fig)
-    print(f"Saved: {out_path}")
+
+    print(f"Saved: {output_path}")
 
 
 if __name__ == "__main__":
