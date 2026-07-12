@@ -170,7 +170,7 @@ def compact_scientific(value, _position):
 def style_axis(ax, show_x_ticks):
     ax.tick_params(
         axis="both",
-        labelsize=10.5,
+        labelsize=12.0,
         length=3.5,
         width=0.8,
         pad=3.0,
@@ -257,7 +257,7 @@ def main():
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 11.0,
+        "font.size": 12.0,
         "axes.linewidth": 0.75,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
@@ -272,12 +272,12 @@ def main():
     column_count = 4
 
     # Balanced for insertion into a portrait thesis page at full text width.
-    figure_height = 2.05 * row_count + 1.25
+    figure_height = 2.10 * row_count + 1.45
 
     fig, axes = plt.subplots(
         row_count,
         column_count,
-        figsize=(9.2, figure_height),
+        figsize=(12.8, figure_height),
         squeeze=False,
         sharex=False,
     )
@@ -343,11 +343,11 @@ def main():
         # Dataset label: placed in the reserved left margin.
         axes[row_index, 0].annotate(
             label,
-            xy=(-0.31, 0.5),
+            xy=(-0.26, 0.5),
             xycoords="axes fraction",
             ha="right",
             va="center",
-            fontsize=13.5,
+            fontsize=15.5,
             fontweight="bold",
             clip_on=False,
         )
@@ -356,7 +356,7 @@ def main():
             for column_index, title in enumerate(column_titles):
                 axes[row_index, column_index].set_title(
                     title,
-                    fontsize=13.0,
+                    fontsize=15.0,
                     fontweight="bold",
                     pad=8,
                 )
@@ -369,13 +369,13 @@ def main():
         ax.plot(
             epochs,
             train_losses,
-            linewidth=1.60,
+            linewidth=1.70,
             color=color_train,
         )
         ax.plot(
             epochs,
             val_losses,
-            linewidth=1.60,
+            linewidth=1.70,
             color=color_validation,
         )
 
@@ -406,7 +406,7 @@ def main():
                     transform=ax.transAxes,
                     ha="right",
                     va="top",
-                    fontsize=9.0,
+                    fontsize=10.0,
                     bbox={
                         "facecolor": "white",
                         "edgecolor": "none",
@@ -423,7 +423,7 @@ def main():
         ax.plot(
             epochs,
             log_ratio,
-            linewidth=1.60,
+            linewidth=1.70,
             color=color_log_ratio,
         )
 
@@ -445,7 +445,7 @@ def main():
         ax.plot(
             epochs,
             gradient_norm,
-            linewidth=1.60,
+            linewidth=1.70,
             color=color_gradient,
         )
         ax.axhline(
@@ -464,17 +464,40 @@ def main():
         ax.plot(
             epochs,
             learning_rate,
-            linewidth=1.60,
+            linewidth=1.70,
             color=color_learning_rate,
         )
 
-        if args.lr_log and np.all(learning_rate > 0):
+        positive_lr = learning_rate[
+            np.isfinite(learning_rate) & (learning_rate > 0)
+        ]
+
+        if (
+            args.lr_log
+            and len(positive_lr) > 0
+            and np.all(learning_rate > 0)
+        ):
             ax.set_yscale("log")
 
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+            lr_min = float(np.min(positive_lr))
+            lr_max = float(np.max(positive_lr))
+
+            if np.isclose(lr_min, lr_max):
+                lr_ticks = np.array([lr_min])
+            else:
+                # Use only three geometric ticks to avoid overlap.
+                lr_ticks = np.geomspace(lr_min, lr_max, 3)
+
+            ax.set_yticks(lr_ticks)
+        else:
+            ax.yaxis.set_major_locator(
+                MaxNLocator(nbins=3)
+            )
+
         ax.yaxis.set_major_formatter(
             FuncFormatter(compact_scientific)
         )
+        ax.yaxis.get_offset_text().set_visible(False)
 
         if args.mark_best:
             ax.axvline(
@@ -491,7 +514,7 @@ def main():
             for column_index in range(column_count):
                 axes[row_index, column_index].set_xlabel(
                     "Epoch",
-                    fontsize=11.5,
+                    fontsize=13.0,
                     labelpad=5,
                 )
 
@@ -500,14 +523,14 @@ def main():
             [0],
             [0],
             color=color_train,
-            linewidth=1.7,
+            linewidth=1.8,
             label="Train",
         ),
         Line2D(
             [0],
             [0],
             color=color_validation,
-            linewidth=1.7,
+            linewidth=1.8,
             label="Validation",
         ),
     ]
@@ -541,24 +564,24 @@ def main():
     fig.legend(
         handles=legend_handles,
         loc="upper center",
-        bbox_to_anchor=(0.54, 0.985),
+        bbox_to_anchor=(0.54, 0.987),
         ncol=len(legend_handles),
         frameon=False,
-        fontsize=10.5,
+        fontsize=12.0,
         handlelength=2.0,
         handletextpad=0.55,
-        columnspacing=0.95,
+        columnspacing=1.10,
     )
 
     # Deliberately reserve more space before the last column so its
     # scientific-notation labels never overlap the gradient panel.
     fig.subplots_adjust(
-        left=0.125,
+        left=0.095,
         right=0.985,
-        top=0.865,
+        top=0.875,
         bottom=0.105,
-        wspace=0.42,
-        hspace=0.32,
+        wspace=0.30,
+        hspace=0.34,
     )
 
     output_path = Path(args.out)
