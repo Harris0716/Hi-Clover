@@ -340,16 +340,15 @@ def main():
         best_epoch = int(epochs[best_index])
         best_val_loss = float(val_losses[best_index])
 
-        # Dataset label: placed in the reserved left margin.
-        axes[row_index, 0].annotate(
+        # Dataset label: 使用 set_ylabel 自動計算寬度，絕對不重疊
+        axes[row_index, 0].set_ylabel(
             label,
-            xy=(-0.45, 0.5),
-            xycoords="axes fraction",
-            ha="right",
-            va="center",
             fontsize=13.5,
             fontweight="bold",
-            clip_on=False,
+            rotation=0,
+            ha="right",
+            va="center",
+            labelpad=16, # 自動與 Y 軸數字保持 16pt 的距離
         )
 
         if row_index == 0:
@@ -550,14 +549,13 @@ def main():
         columnspacing=0.95,
     )
 
-    # Deliberately reserve more space before the last column so its
-    # scientific-notation labels never overlap the gradient panel.
+    # 確保有足夠的 left 邊界容納資料集名稱，並加大 wspace 避免中間互相干擾
     fig.subplots_adjust(
-        left=0.18,
+        left=0.15,
         right=0.985,
         top=0.865,
-        bottom=0.16,
-        wspace=0.48,
+        bottom=0.12,
+        wspace=0.45,
         hspace=0.35,
     )
 
