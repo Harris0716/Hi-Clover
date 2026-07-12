@@ -93,9 +93,10 @@ def main():
     if rows == 1:
         axes = np.expand_dims(axes, axis=0)
 
+    # 已移除 Log-ratio 的公式
     col_titles = [
         "Triplet loss", 
-        "Log-ratio, log(d(a, n)/d(a, p))", 
+        "Log-ratio", 
         "Gradient norm", 
         "Learning rate"
     ]
