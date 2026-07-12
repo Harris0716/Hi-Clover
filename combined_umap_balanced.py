@@ -230,9 +230,9 @@ def plot_one_panel(
         # 標題放在水平圖例上方。
         ax.set_title(
             title,
-            fontsize=17.0,
+            fontsize=15.0,
             fontweight="bold",
-            pad=34,
+            pad=24,
         )
 
     ax.set_xticks([])
@@ -240,7 +240,7 @@ def plot_one_panel(
     ax.tick_params(length=0)
 
     for side in ["top", "right", "bottom", "left"]:
-        ax.spines[side].set_linewidth(0.80)
+        ax.spines[side].set_linewidth(0.75)
         ax.spines[side].set_color("#666666")
 
     return handles
@@ -256,14 +256,14 @@ def add_top_legend(ax, handles, labels):
         labels,
         ncol=4,
         loc="lower left",
-        bbox_to_anchor=(0.0, 1.008, 1.0, 0.060),
+        bbox_to_anchor=(0.0, 1.000, 1.0, 0.050),
         mode="expand",
         borderaxespad=0.0,
         frameon=False,
-        fontsize=11.2,
-        handletextpad=0.30,
-        columnspacing=0.45,
-        markerscale=1.80,
+        fontsize=9.8,
+        handletextpad=0.22,
+        columnspacing=0.35,
+        markerscale=1.45,
     )
 
     # 確保圖例中的點不會因原始散點透明度而太淡。
@@ -396,17 +396,17 @@ def main():
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 12.0,
-        "axes.titlesize": 17.0,
-        "axes.labelsize": 15.0,
-        "legend.fontsize": 11.2,
+        "font.size": 10.5,
+        "axes.titlesize": 15.0,
+        "axes.labelsize": 13.5,
+        "legend.fontsize": 9.8,
         "axes.linewidth": 0.85,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
 
     # 移除原本右側圖例欄後，三欄子圖可放得更大。
-    fig = plt.figure(figsize=(12.2, 7.4))
+    fig = plt.figure(figsize=(11.8, 7.0))
 
     grid = GridSpec(
         2,
@@ -414,12 +414,12 @@ def main():
         figure=fig,
         width_ratios=[1.0, 1.0, 1.0],
         height_ratios=[1.0, 1.0],
-        left=0.095,
-        right=0.975,
-        top=0.805,
-        bottom=0.125,
-        wspace=0.085,
-        hspace=0.075,
+        left=0.090,
+        right=0.985,
+        top=0.860,
+        bottom=0.115,
+        wspace=0.080,
+        hspace=0.080,
     )
 
     axes = [
@@ -522,15 +522,15 @@ def main():
 
     fig.text(
         x_center_panels,
-        0.055,
+        0.052,
         "UMAP Dimension 1",
         ha="center",
         va="center",
-        fontsize=15.0,
+        fontsize=13.5,
     )
 
     fig.text(
-        0.030,
+        0.034,
         (
             bottom_left_position.y0
             + top_left_position.y1
@@ -539,7 +539,7 @@ def main():
         ha="center",
         va="center",
         rotation="vertical",
-        fontsize=15.0,
+        fontsize=13.5,
     )
 
     fig.text(
@@ -549,7 +549,7 @@ def main():
         va="center",
         ha="center",
         rotation="vertical",
-        fontsize=14.0,
+        fontsize=12.5,
         fontweight="bold",
     )
 
@@ -560,7 +560,7 @@ def main():
         va="center",
         ha="center",
         rotation="vertical",
-        fontsize=14.0,
+        fontsize=12.5,
         fontweight="bold",
     )
 
@@ -575,7 +575,7 @@ def main():
         args.out,
         dpi=args.dpi,
         bbox_inches="tight",
-        pad_inches=0.12,
+        pad_inches=0.06,
     )
     plt.close(fig)
 
