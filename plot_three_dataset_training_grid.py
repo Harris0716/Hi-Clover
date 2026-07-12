@@ -343,7 +343,7 @@ def main():
         # Dataset label: placed in the reserved left margin.
         axes[row_index, 0].annotate(
             label,
-            xy=(-0.26, 0.5),
+            xy=(-0.18, 0.5),
             xycoords="axes fraction",
             ha="right",
             va="center",
@@ -576,7 +576,7 @@ def main():
     # Deliberately reserve more space before the last column so its
     # scientific-notation labels never overlap the gradient panel.
     fig.subplots_adjust(
-        left=0.095,
+        left=0.120,
         right=0.985,
         top=0.875,
         bottom=0.105,
