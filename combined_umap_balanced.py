@@ -414,10 +414,10 @@ def main():
         figure=fig,
         width_ratios=[1.0, 1.0, 1.0],
         height_ratios=[1.0, 1.0],
-        left=0.082,
-        right=0.995,
-        top=0.825,
-        bottom=0.105,
+        left=0.095,
+        right=0.975,
+        top=0.805,
+        bottom=0.125,
         wspace=0.085,
         hspace=0.075,
     )
@@ -522,7 +522,7 @@ def main():
 
     fig.text(
         x_center_panels,
-        0.040,
+        0.055,
         "UMAP Dimension 1",
         ha="center",
         va="center",
@@ -530,7 +530,7 @@ def main():
     )
 
     fig.text(
-        0.021,
+        0.030,
         (
             bottom_left_position.y0
             + top_left_position.y1
@@ -543,7 +543,7 @@ def main():
     )
 
     fig.text(
-        0.060,
+        0.072,
         y_train,
         row_labels[0],
         va="center",
@@ -554,7 +554,7 @@ def main():
     )
 
     fig.text(
-        0.060,
+        0.072,
         y_test,
         row_labels[1],
         va="center",
@@ -575,7 +575,7 @@ def main():
         args.out,
         dpi=args.dpi,
         bbox_inches="tight",
-        pad_inches=0.03,
+        pad_inches=0.12,
     )
     plt.close(fig)
 
