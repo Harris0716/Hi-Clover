@@ -415,10 +415,10 @@ def main():
         width_ratios=[1.0, 1.0, 1.0],
         height_ratios=[1.0, 1.0],
         left=0.090,
-        right=0.985,
+        right=0.965,
         top=0.860,
         bottom=0.115,
-        wspace=0.080,
+        wspace=0.065,
         hspace=0.080,
     )
 
@@ -574,8 +574,6 @@ def main():
     fig.savefig(
         args.out,
         dpi=args.dpi,
-        bbox_inches="tight",
-        pad_inches=0.06,
     )
     plt.close(fig)
 
