@@ -170,11 +170,15 @@ def compact_scientific(value, _position):
 def style_axis(ax, show_x_ticks):
     ax.tick_params(
         axis="both",
-        labelsize=8.5,
-        length=3,
-        width=0.75,
-        pad=2.5,
+        labelsize=10.5,
+        length=3.5,
+        width=0.8,
+        pad=3.0,
     )
+
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+    if ax.get_yscale() != "log":
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
 
     if not show_x_ticks:
         ax.tick_params(axis="x", labelbottom=False)
@@ -253,7 +257,7 @@ def main():
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 9.5,
+        "font.size": 11.0,
         "axes.linewidth": 0.75,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
@@ -268,19 +272,19 @@ def main():
     column_count = 4
 
     # Balanced for insertion into a portrait thesis page at full text width.
-    figure_height = 1.95 * row_count + 1.35
+    figure_height = 2.05 * row_count + 1.25
 
     fig, axes = plt.subplots(
         row_count,
         column_count,
-        figsize=(11.8, figure_height),
+        figsize=(9.2, figure_height),
         squeeze=False,
         sharex=False,
     )
 
     column_titles = [
         "Triplet loss",
-        r"Log-ratio, $\log(d(a,n)/d(a,p))$",
+        "Log-ratio",
         "Gradient norm",
         "Learning rate",
     ]
@@ -343,7 +347,7 @@ def main():
             xycoords="axes fraction",
             ha="right",
             va="center",
-            fontsize=12.0,
+            fontsize=13.5,
             fontweight="bold",
             clip_on=False,
         )
@@ -352,7 +356,7 @@ def main():
             for column_index, title in enumerate(column_titles):
                 axes[row_index, column_index].set_title(
                     title,
-                    fontsize=11.0,
+                    fontsize=13.0,
                     fontweight="bold",
                     pad=8,
                 )
@@ -365,13 +369,13 @@ def main():
         ax.plot(
             epochs,
             train_losses,
-            linewidth=1.45,
+            linewidth=1.60,
             color=color_train,
         )
         ax.plot(
             epochs,
             val_losses,
-            linewidth=1.45,
+            linewidth=1.60,
             color=color_validation,
         )
 
@@ -402,7 +406,7 @@ def main():
                     transform=ax.transAxes,
                     ha="right",
                     va="top",
-                    fontsize=7.3,
+                    fontsize=9.0,
                     bbox={
                         "facecolor": "white",
                         "edgecolor": "none",
@@ -419,7 +423,7 @@ def main():
         ax.plot(
             epochs,
             log_ratio,
-            linewidth=1.45,
+            linewidth=1.60,
             color=color_log_ratio,
         )
 
@@ -441,7 +445,7 @@ def main():
         ax.plot(
             epochs,
             gradient_norm,
-            linewidth=1.45,
+            linewidth=1.60,
             color=color_gradient,
         )
         ax.axhline(
@@ -460,7 +464,7 @@ def main():
         ax.plot(
             epochs,
             learning_rate,
-            linewidth=1.45,
+            linewidth=1.60,
             color=color_learning_rate,
         )
 
@@ -487,8 +491,8 @@ def main():
             for column_index in range(column_count):
                 axes[row_index, column_index].set_xlabel(
                     "Epoch",
-                    fontsize=9.5,
-                    labelpad=4,
+                    fontsize=11.5,
+                    labelpad=5,
                 )
 
     legend_handles = [
@@ -496,14 +500,14 @@ def main():
             [0],
             [0],
             color=color_train,
-            linewidth=1.5,
+            linewidth=1.7,
             label="Train",
         ),
         Line2D(
             [0],
             [0],
             color=color_validation,
-            linewidth=1.5,
+            linewidth=1.7,
             label="Validation",
         ),
     ]
@@ -516,7 +520,7 @@ def main():
                 color=color_best,
                 linestyle="--",
                 linewidth=1.0,
-                label="Best validation epoch",
+                label="Best val. epoch",
             )
         )
 
@@ -528,7 +532,7 @@ def main():
             linestyle="--",
             linewidth=1.0,
             label=(
-                "Gradient clipping max norm "
+                "Clip max norm "
                 f"= {args.max_norm:g}"
             ),
         )
@@ -537,24 +541,24 @@ def main():
     fig.legend(
         handles=legend_handles,
         loc="upper center",
-        bbox_to_anchor=(0.54, 0.982),
+        bbox_to_anchor=(0.54, 0.985),
         ncol=len(legend_handles),
         frameon=False,
-        fontsize=8.7,
-        handlelength=2.4,
+        fontsize=10.5,
+        handlelength=2.0,
         handletextpad=0.55,
-        columnspacing=1.25,
+        columnspacing=0.95,
     )
 
     # Deliberately reserve more space before the last column so its
     # scientific-notation labels never overlap the gradient panel.
     fig.subplots_adjust(
-        left=0.115,
-        right=0.975,
-        top=0.885,
+        left=0.125,
+        right=0.985,
+        top=0.865,
         bottom=0.105,
-        wspace=0.37,
-        hspace=0.30,
+        wspace=0.42,
+        hspace=0.32,
     )
 
     output_path = Path(args.out)
